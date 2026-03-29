@@ -3,6 +3,8 @@ Video generation core module
 Contains the main orchestration logic for video generation across different providers
 """
 
+import asyncio
+import base64
 import os
 import traceback
 from typing import List, cast, Optional, Any
@@ -18,6 +20,7 @@ from .video_canvas_utils import (
 )
 from services.config_service import FILES_DIR
 from ..video_generation_utils import get_image_base64
+from utils.http_client import HttpClient
 
 _VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v', '.3gp'}
 
@@ -26,10 +29,27 @@ _VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v', '.3gp'}
 _SERVER_BASE_URL = os.environ.get("JAAZ_SERVER_URL", "http://127.0.0.1:57988").rstrip("/")
 
 
-def _resolve_image_url(ref: str) -> str:
-    """Convert a local image file_id/filename to a base64 data URL. Returns ref unchanged for http/data URLs."""
-    if ref.startswith(('http://', 'https://', 'data:')):
+async def _resolve_image_url(ref: str) -> str:
+    """
+    Resolve an image reference to a base64 data URL.
+    - data: URLs → returned as-is
+    - http/https URLs → downloaded and converted to base64
+    - local file_id/filename → read from FILES_DIR and converted to base64
+    """
+    if ref.startswith('data:'):
         return ref
+    if ref.startswith(('http://', 'https://')):
+        try:
+            async with HttpClient.create_aiohttp() as session:
+                async with session.get(ref) as response:
+                    data = await response.read()
+                    content_type = response.headers.get('Content-Type', 'image/jpeg').split(';')[0]
+                    b64 = base64.b64encode(data).decode('utf-8')
+                    print(f"🖼️ Downloaded remote image '{ref[:60]}...' → base64 ({len(data)} bytes)")
+                    return f"data:{content_type};base64,{b64}"
+        except Exception as e:
+            print(f"⚠️ Failed to download image '{ref}': {e}, passing URL as-is")
+            return ref
     ref_stem = os.path.splitext(ref)[0]
     for fname in os.listdir(FILES_DIR):
         if fname == ref or os.path.splitext(fname)[0] == ref_stem:
@@ -122,8 +142,8 @@ async def generate_video_with_provider(
             f"Starting video generation using {model_name} via {provider_name}..."
         )
 
-        # Images → base64 data URL; Videos → server-hosted web URL (external APIs require real URLs for video)
-        processed_input_images = [_resolve_image_url(r) for r in input_images] if input_images else None
+        # Images → base64 data URL (download remote URLs if needed); Videos → server-hosted web URL
+        processed_input_images = list(await asyncio.gather(*[_resolve_image_url(r) for r in input_images])) if input_images else None
         processed_input_videos = [_resolve_video_url(r) for r in input_videos] if input_videos else None
 
         # Generate video using the selected provider
