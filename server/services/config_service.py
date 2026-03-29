@@ -46,7 +46,7 @@ DEFAULT_PROVIDERS_CONFIG: AppConfig = {
     },
     'ollama': {
         'models': {},
-        'url': 'http://localhost:11434',
+        'url': '',
         'api_key': '',
         'max_tokens': 8192,
     },
@@ -59,16 +59,14 @@ DEFAULT_PROVIDERS_CONFIG: AppConfig = {
         'api_key': '',
         'max_tokens': 8192,
     },
-    #by Liu Chen
     'cfgpu': {
         'models': {
             'wan-video': {'type': 'video'},
-            'wan-video-fast':{'type':'video'},
-            'z-ai/glm-5': {'type': 'text'},
         },
-        'url': 'https://www.cfgpu.com/userapi/v1/model/v1',
+        'url': 'https://www.cfgpu.com/userapi/v1/model/v1/',
         'api_key': '',
     },
+
 }
 
 SERVER_DIR = os.path.dirname(os.path.dirname(__file__))

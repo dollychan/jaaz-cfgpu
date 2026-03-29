@@ -110,7 +110,15 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
                 **kwargs
             )
 
-            print(f"🎥 Starting CFGPU video generation, model: {model}")
+            # Debug: print payload content types (truncate base64 for readability)
+            debug_content = []
+            for item in payload.get("content", []):
+                item_copy = dict(item)
+                if item_copy.get("type") == "image_url":
+                    url = item_copy.get("image_url", {}).get("url", "")
+                    item_copy["image_url"] = {"url": url[:80] + "..." if len(url) > 80 else url}
+                debug_content.append(item_copy)
+            print(f"🎥 Starting CFGPU video generation, model: {model}, content: {debug_content}")
 
             async with HttpClient.create_aiohttp() as session:
                 async with session.post(api_url, headers=headers, json=payload) as response:

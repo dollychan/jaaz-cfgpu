@@ -3,20 +3,37 @@ Video generation core module
 Contains the main orchestration logic for video generation across different providers
 """
 
+import os
 import traceback
 from typing import List, cast, Optional, Any
 from models.config_model import ModelInfo
 from ..video_providers.video_base_provider import get_default_provider, VideoProviderBase
 # Import all providers to ensure automatic registration (don't delete these imports)
 from ..video_providers.volces_provider import VolcesVideoProvider  # type: ignore
-#by Liu Chen
 from ..video_providers.cfgpu_provider import CfgpuVideoProvider  # type: ignore
-
 from .video_canvas_utils import (
     send_video_start_notification,
     send_video_error_notification,
     process_video_result,
 )
+from services.config_service import FILES_DIR
+from ..video_generation_utils import get_image_base64
+
+
+def _resolve_media_url(ref: str) -> str:
+    """
+    Convert a file_id or filename (e.g. 'im_xxxxxx' or 'im_xxxxxx.jpg') to a base64 data URL.
+    If ref is already an http/https/data URL, return as-is.
+    """
+    if ref.startswith(('http://', 'https://', 'data:')):
+        return ref
+    ref_stem = os.path.splitext(ref)[0]  # strip extension if present
+    # Search for matching file in FILES_DIR by exact name or stem
+    for fname in os.listdir(FILES_DIR):
+        if fname == ref or os.path.splitext(fname)[0] == ref_stem:
+            return get_image_base64(fname)
+    # Fallback: return as-is
+    return ref
 
 
 async def generate_video_with_provider(
@@ -28,6 +45,7 @@ async def generate_video_with_provider(
     tool_call_id: str,
     config: Any,
     input_images: Optional[list[str]] = None,
+    input_videos: Optional[list[str]] = None,
     camera_fixed: bool = True,
     **kwargs: Any
 ) -> str:
@@ -43,6 +61,7 @@ async def generate_video_with_provider(
         tool_call_id: Tool call ID
         config: Context runtime configuration containing canvas_id, session_id, model_info, injected by langgraph
         input_images: Optional input reference images list
+        input_videos: Optional input reference videos list
         camera_fixed: Whether to keep camera fixed
 
     Returns:
@@ -84,12 +103,9 @@ async def generate_video_with_provider(
             f"Starting video generation using {model_name} via {provider_name}..."
         )
 
-        # Process input images for the provider
-        processed_input_images = None
-        if input_images:
-            # For some providers, we might need to process input images differently
-            # For now, just pass them as is
-            processed_input_images = input_images
+        # Convert file_ids to base64 data URLs for external providers
+        processed_input_images = [_resolve_media_url(r) for r in input_images] if input_images else None
+        processed_input_videos = [_resolve_media_url(r) for r in input_videos] if input_videos else None
 
         # Generate video using the selected provider
         video_url = await provider_instance.generate(
@@ -99,6 +115,7 @@ async def generate_video_with_provider(
             duration=duration,
             aspect_ratio=aspect_ratio,
             input_images=processed_input_images,
+            input_videos=processed_input_videos,
             camera_fixed=camera_fixed,
             **kwargs
         )

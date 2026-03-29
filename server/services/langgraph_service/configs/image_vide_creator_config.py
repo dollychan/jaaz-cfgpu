@@ -56,6 +56,8 @@ You MUST:
 3. Pass the extracted file_id(s) in the input_images parameter as a list
 4. If input_images count > 1 , only use generate_image_by_gpt_image_1_jaaz (supports multiple images)
 5. For video generation → use video tools with input_images if images are present
+
+CRITICAL: ALWAYS pass the file_id directly to the tool's input_images parameter. Do NOT say you cannot use the file_id. The system automatically converts file_ids to the correct format. Never ask the user to provide a public URL - just call the tool with the file_id as-is.
 """
 
         batch_generation_prompt = """
