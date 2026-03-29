@@ -58,6 +58,16 @@ You MUST:
 5. For video generation → use video tools with input_images if images are present
 
 CRITICAL: ALWAYS pass the file_id directly to the tool's input_images parameter. Do NOT say you cannot use the file_id. The system automatically converts file_ids to the correct format. Never ask the user to provide a public URL - just call the tool with the file_id as-is.
+
+VIDEO INPUT DETECTION:
+When the user's message contains input videos in XML format like:
+<input_videos></input_videos>
+You MUST:
+1. Parse the XML to extract file_id attributes from <video> tags
+2. Pass the extracted file_id(s) in the input_videos parameter as a list when calling video generation tools
+3. The system automatically converts video file_ids to the correct format - NEVER ask the user for a public URL
+
+CRITICAL: ALWAYS pass video file_ids directly to the tool's input_videos parameter. Do NOT say you cannot use the file_id.
 """
 
         batch_generation_prompt = """

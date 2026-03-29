@@ -14,3 +14,15 @@ export async function uploadImage(
   })
   return await response.json()
 }
+
+export async function uploadVideo(
+  file: File
+): Promise<{ file_id: string; url: string }> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const response = await fetch('/api/upload_video', {
+    method: 'POST',
+    body: formData,
+  })
+  return await response.json()
+}

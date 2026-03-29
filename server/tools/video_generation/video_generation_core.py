@@ -17,22 +17,28 @@ from .video_canvas_utils import (
     process_video_result,
 )
 from services.config_service import FILES_DIR
-from ..video_generation_utils import get_image_base64
+from ..video_generation_utils import get_image_base64, get_video_base64
+
+_VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v', '.3gp'}
 
 
 def _resolve_media_url(ref: str) -> str:
     """
-    Convert a file_id or filename (e.g. 'im_xxxxxx' or 'im_xxxxxx.jpg') to a base64 data URL.
-    If ref is already an http/https/data URL, return as-is.
+    Convert a file_id or filename to a base64 data URL.
+    - Images: use get_image_base64
+    - Videos (vi_* or video extensions): use get_video_base64
+    - http/https/data URLs: return as-is
     """
     if ref.startswith(('http://', 'https://', 'data:')):
         return ref
-    ref_stem = os.path.splitext(ref)[0]  # strip extension if present
-    # Search for matching file in FILES_DIR by exact name or stem
+    ref_stem = os.path.splitext(ref)[0]
     for fname in os.listdir(FILES_DIR):
         if fname == ref or os.path.splitext(fname)[0] == ref_stem:
-            return get_image_base64(fname)
-    # Fallback: return as-is
+            ext = os.path.splitext(fname)[1].lower()
+            if ext in _VIDEO_EXTENSIONS:
+                return get_video_base64(fname)
+            else:
+                return get_image_base64(fname)
     return ref
 
 

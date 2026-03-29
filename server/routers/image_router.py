@@ -2,6 +2,7 @@ from fastapi.responses import FileResponse
 from fastapi.concurrency import run_in_threadpool
 from common import DEFAULT_PORT
 from tools.utils.image_canvas_utils import generate_file_id
+from tools.video_generation_utils import generate_video_file_id
 from services.config_service import FILES_DIR
 
 from PIL import Image
@@ -15,6 +16,35 @@ from utils.http_client import HttpClient
 
 router = APIRouter(prefix="/api")
 os.makedirs(FILES_DIR, exist_ok=True)
+
+
+@router.post("/upload_video")
+async def upload_video(file: UploadFile = File(...)):
+    print('🎥 upload_video file', file.filename)
+    file_id = generate_video_file_id()
+    filename = file.filename or 'video.mp4'
+
+    # Determine extension from mime type or filename
+    content_type = file.content_type or ''
+    if 'mp4' in content_type or filename.endswith('.mp4'):
+        extension = 'mp4'
+    elif 'mov' in content_type or filename.endswith('.mov'):
+        extension = 'mov'
+    elif 'webm' in content_type or filename.endswith('.webm'):
+        extension = 'webm'
+    else:
+        extension = 'mp4'
+
+    file_path = os.path.join(FILES_DIR, f'{file_id}.{extension}')
+    content = await file.read()
+    async with aiofiles.open(file_path, 'wb') as f:
+        await f.write(content)
+
+    print('🎥 upload_video saved to', file_path)
+    return {
+        'file_id': f'{file_id}.{extension}',
+        'url': f'/api/file/{file_id}.{extension}',
+    }
 
 # 上传图片接口，支持表单提交
 @router.post("/upload_image")

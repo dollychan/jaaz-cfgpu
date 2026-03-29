@@ -1,6 +1,6 @@
 import { cancelChat } from '@/api/chat'
 import { cancelMagicGenerate } from '@/api/magic'
-import { uploadImage } from '@/api/upload'
+import { uploadImage, uploadVideo } from '@/api/upload'
 import { Button } from '@/components/ui/button'
 import { useConfigs } from '@/contexts/configs'
 import {
@@ -23,6 +23,7 @@ import {
   RectangleVertical,
   ChevronDown,
   Hash,
+  Video,
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import Textarea, { TextAreaRef } from 'rc-textarea'
@@ -85,6 +86,8 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
   const MAX_QUANTITY = 30
 
   const imageInputRef = useRef<HTMLInputElement>(null)
+  const videoInputRef = useRef<HTMLInputElement>(null)
+  const [videos, setVideos] = useState<{ file_id: string }[]>([])
 
   // 充值按钮组件
   const RechargeContent = useCallback(() => (
@@ -141,6 +144,32 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
       }
     },
     [uploadImageMutation]
+  )
+
+  const { mutate: uploadVideoMutation } = useMutation({
+    mutationFn: (file: File) => uploadVideo(file),
+    onSuccess: (data) => {
+      console.log('🎥 uploadVideoMutation onSuccess', data)
+      setVideos((prev) => [...prev, { file_id: data.file_id }])
+    },
+    onError: (error) => {
+      console.error('🎥 uploadVideoMutation onError', error)
+      toast.error('Failed to upload video', {
+        description: <div>{error.toString()}</div>,
+      })
+    },
+  })
+
+  const handleVideosUpload = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files
+      if (files) {
+        for (const file of files) {
+          uploadVideoMutation(file)
+        }
+      }
+    },
+    [uploadVideoMutation]
   )
 
   const handleCancelChat = useCallback(async () => {
@@ -210,6 +239,14 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
       text_content += `\n</input_images>`
     }
 
+    if (videos.length > 0) {
+      text_content += `\n\n<input_videos count="${videos.length}">`
+      videos.forEach((video, index) => {
+        text_content += `\n<video index="${index + 1}" file_id="${video.file_id}" />`
+      })
+      text_content += `\n</input_videos>`
+    }
+
     // Fetch images as base64
     const imagePromises = images.map(async (image) => {
       const response = await fetch(`/api/file/${image.file_id}`)
@@ -244,6 +281,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
     ])
 
     setImages([])
+    setVideos([])
     setPrompt('')
 
     onSendMessages(newMessage, {
@@ -257,6 +295,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
     prompt,
     onSendMessages,
     images,
+    videos,
     messages,
     t,
     selectedAspectRatio,
@@ -446,6 +485,45 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
         )}
       </AnimatePresence>
 
+      <AnimatePresence>
+        {videos.length > 0 && (
+          <motion.div
+            className="flex items-center gap-2 w-full"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
+          >
+            {videos.map((video) => (
+              <motion.div
+                key={video.file_id}
+                className="relative size-10"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ duration: 0.2, ease: 'easeInOut' }}
+              >
+                <div className="w-full h-full bg-muted rounded-md flex items-center justify-center">
+                  <Video className="size-5 text-muted-foreground" />
+                </div>
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  className="absolute -top-1 -right-1 size-4"
+                  onClick={() =>
+                    setVideos((prev) =>
+                      prev.filter((v) => v.file_id !== video.file_id)
+                    )
+                  }
+                >
+                  <XIcon className="size-3" />
+                </Button>
+              </motion.div>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <Textarea
         ref={textareaRef}
         className="w-full h-full border-none outline-none resize-none"
@@ -473,12 +551,27 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
             onChange={handleImagesUpload}
             hidden
           />
+          <input
+            ref={videoInputRef}
+            type="file"
+            accept="video/*"
+            multiple
+            onChange={handleVideosUpload}
+            hidden
+          />
           <Button
             variant="outline"
             size="sm"
             onClick={() => imageInputRef.current?.click()}
           >
             <PlusIcon className="size-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => videoInputRef.current?.click()}
+          >
+            <Video className="size-4" />
           </Button>
 
           <ModelSelectorV3 />

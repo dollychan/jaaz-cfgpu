@@ -59,6 +59,18 @@ async def get_video_info_and_save(
         raise e
 
 
+def get_video_base64(video_name: str) -> str:
+    """Convert a local video file to base64 data URL"""
+    video_path = os.path.join(FILES_DIR, video_name)
+    with open(video_path, 'rb') as f:
+        video_data = f.read()
+    b64 = base64.b64encode(video_data).decode('utf-8')
+    mime_type, _ = guess_type(video_path)
+    if not mime_type:
+        mime_type = 'video/mp4'
+    return f"data:{mime_type};base64,{b64}"
+
+
 def get_image_base64(image_name: str):
     # Process image
     image_path = os.path.join(FILES_DIR, f"{image_name}")
