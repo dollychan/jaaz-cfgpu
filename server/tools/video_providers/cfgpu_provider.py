@@ -125,10 +125,9 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
                     if response.status != 200:
                         try:
                             error_data = await response.json()
-                            error_message = error_data.get("message", f"HTTP {response.status}")
                         except Exception:
-                            error_message = f"HTTP {response.status}"
-                        raise Exception(f"CFGPU task creation failed: {error_message}")
+                            error_data = await response.text()
+                        raise Exception(f"CFGPU video generation task creation failed: {error_data}")
 
                     result = await response.json()
                     task_id = result.get("id") or result.get("task_id")

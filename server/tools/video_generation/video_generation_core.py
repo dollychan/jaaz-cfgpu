@@ -17,28 +17,41 @@ from .video_canvas_utils import (
     process_video_result,
 )
 from services.config_service import FILES_DIR
-from ..video_generation_utils import get_image_base64, get_video_base64
+from ..video_generation_utils import get_image_base64
 
 _VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v', '.3gp'}
 
+# Public base URL of this jaaz server, used so external APIs can fetch local video files.
+# Set JAAZ_SERVER_URL env var to the publicly accessible address, e.g. http://1.2.3.4:57988
+_SERVER_BASE_URL = os.environ.get("JAAZ_SERVER_URL", "http://127.0.0.1:57988").rstrip("/")
 
-def _resolve_media_url(ref: str) -> str:
+
+def _resolve_image_url(ref: str) -> str:
+    """Convert a local image file_id/filename to a base64 data URL. Returns ref unchanged for http/data URLs."""
+    if ref.startswith(('http://', 'https://', 'data:')):
+        return ref
+    ref_stem = os.path.splitext(ref)[0]
+    for fname in os.listdir(FILES_DIR):
+        if fname == ref or os.path.splitext(fname)[0] == ref_stem:
+            return get_image_base64(fname)
+    return ref
+
+
+def _resolve_video_url(ref: str) -> str:
     """
-    Convert a file_id or filename to a base64 data URL.
-    - Images: use get_image_base64
-    - Videos (vi_* or video extensions): use get_video_base64
-    - http/https/data URLs: return as-is
+    Convert a local video file_id/filename to a server-hosted URL.
+    External video APIs (e.g. cfgpu) require a real web URL, not base64.
+    Falls back to ref unchanged if the file is not found locally.
     """
     if ref.startswith(('http://', 'https://', 'data:')):
         return ref
     ref_stem = os.path.splitext(ref)[0]
     for fname in os.listdir(FILES_DIR):
         if fname == ref or os.path.splitext(fname)[0] == ref_stem:
-            ext = os.path.splitext(fname)[1].lower()
-            if ext in _VIDEO_EXTENSIONS:
-                return get_video_base64(fname)
-            else:
-                return get_image_base64(fname)
+            server_url = f"{_SERVER_BASE_URL}/api/file/{fname}"
+            print(f"🎥 Resolved local video '{ref}' → {server_url}")
+            return server_url
+    print(f"⚠️ Video file not found locally for ref '{ref}', passing as-is")
     return ref
 
 
@@ -109,9 +122,9 @@ async def generate_video_with_provider(
             f"Starting video generation using {model_name} via {provider_name}..."
         )
 
-        # Convert file_ids to base64 data URLs for external providers
-        processed_input_images = [_resolve_media_url(r) for r in input_images] if input_images else None
-        processed_input_videos = [_resolve_media_url(r) for r in input_videos] if input_videos else None
+        # Images → base64 data URL; Videos → server-hosted web URL (external APIs require real URLs for video)
+        processed_input_images = [_resolve_image_url(r) for r in input_images] if input_images else None
+        processed_input_videos = [_resolve_video_url(r) for r in input_videos] if input_videos else None
 
         # Generate video using the selected provider
         video_url = await provider_instance.generate(
