@@ -89,6 +89,7 @@ async def save_video_to_canvas(
             {
                 "width": width,
                 "height": height,
+                "link": file_url,
             },
         )
 
@@ -153,7 +154,6 @@ async def send_video_error_notification(session_id: str, error_message: str) -> 
 def format_video_success_message(filename: str) -> str:
     """Format success message for video generation"""
     return f"video generated successfully ![video_id: {filename}](/api/file/{filename})"
-    #return f"video generated successfully ![video_id: {filename}](http://localhost:{DEFAULT_PORT}/api/file/{filename})"
 
 
 async def process_video_result(
@@ -262,23 +262,23 @@ async def generate_new_video_element(
     new_x, new_y = await find_next_best_element_position(canvas_data)
 
     return {
-        "type": "video",
+        "type": "embeddable",
         "id": fileid,
         "x": new_x,
         "y": new_y,
-        "width": video_data.get("width", 0),
-        "height": video_data.get("height", 0),
+        "width": video_data.get("width", 1280),
+        "height": video_data.get("height", 720),
         "angle": 0,
-        "fileId": fileid,
+        "link": video_data.get("link"),   # video file URL，Excalidraw embeddable 必须有 link
         "strokeColor": "#000000",
         "fillStyle": "solid",
         "strokeStyle": "solid",
-        "boundElements": None,
+        "boundElements": [],
         "roundness": None,
         "frameId": None,
         "backgroundColor": "transparent",
         "strokeWidth": 1,
-        "roughness": 0,
+        "roughness": 1,
         "opacity": 100,
         "groupIds": [],
         "seed": int(random.random() * 1000000),
@@ -287,9 +287,6 @@ async def generate_new_video_element(
         "isDeleted": False,
         "index": None,
         "updated": 0,
-        "link": None,
         "locked": False,
-        "status": "saved",
-        "scale": [1, 1],
-        "crop": None,
+        "customData": {},
     }

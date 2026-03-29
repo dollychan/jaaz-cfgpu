@@ -82,8 +82,19 @@ const NonMemoizedMarkdown: React.FC<MarkdownProps> = ({ children }) => {
   }, [hasUnclosed])
 
   const handleImagePositioning = (id: string) => {
-    excalidrawAPI?.scrollToContent(id, { animate: true })
-  }
+    //excalidrawAPI?.scrollToContent(id, { animate: true })
+    console.log('[GoToImage] id:', id)
+    const allElements = excalidrawAPI?.getSceneElements()
+    const allElementsIncDeleted = excalidrawAPI?.getSceneElementsIncludingDeleted()
+    console.log('[GoToImage] getSceneElements count:', allElements?.length)
+    console.log('[GoToImage] getSceneElementsIncludingDeleted count:', allElementsIncDeleted?.length)
+    console.log('[GoToImage] all element ids:', allElementsIncDeleted?.map(el => `${el.id}(${el.type})`))
+    console.log('[GoToImage] files:', Object.keys(excalidrawAPI?.getFiles() || {}))
+    const element = allElementsIncDeleted?.find((el) => el.id === id)    
+    if (element) {
+      excalidrawAPI?.scrollToContent(element, { animate: true, fitToViewport: true })
+    } 
+ }
 
   const components: Components = {
     code: ({ node, className, children, ref, ...props }) => {

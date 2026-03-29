@@ -5,7 +5,7 @@ from langchain_core.runnables import RunnableConfig
 from tools.video_generation.video_generation_core import generate_video_with_provider
 
 
-class GenerateVideoByWanVideoFastCfgpuInputSchema(BaseModel):
+class GenerateByCfgpuSeedance2_0FastInputSchema(BaseModel):
     prompt: str = Field(
         description="Required. The prompt for video generation. Describe what you want to see in the video."
     )
@@ -20,10 +20,10 @@ class GenerateVideoByWanVideoFastCfgpuInputSchema(BaseModel):
     tool_call_id: Annotated[str, InjectedToolCallId]
 
 
-@tool("generate_video_by_wan_video_fast_cfgpu",
+@tool("generate_video_by_cfgpu_seedance_2_0_fast",
       description="Generate videos quickly using Wan-Video-Fast model via CFGPU provider. Faster than Wan-Video, supports text-to-video generation.",
-      args_schema=GenerateVideoByWanVideoFastCfgpuInputSchema)
-async def generate_video_by_wan_video_fast_cfgpu(
+      args_schema=GenerateByCfgpuSeedance2_0FastInputSchema)
+async def generate_video_by_cfgpu_seedance_2_0_fast(
     prompt: str,
     config: RunnableConfig,
     tool_call_id: Annotated[str, InjectedToolCallId],
@@ -41,4 +41,4 @@ async def generate_video_by_wan_video_fast_cfgpu(
     )
 
 
-__all__ = ["generate_video_by_wan_video_fast_cfgpu"]
+__all__ = ["generate_video_by_cfgpu_seedance_2_0_fast"]

@@ -13,7 +13,6 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
     def __init__(self):
         config = config_service.app_config.get('cfgpu', {})
         self.api_key = config.get("api_key", "")
-        #self.base_url = config.get("url", "https://www.cfgpu.com/userapi/v1").rstrip("/")
         text_url = config.get("url", "https://www.cfgpu.com/userapi/v1/model/v1/").rstrip("/")
         # Text URL is .../model/v1; video URL lives at .../video, so strip /model/v1
         self.base_url = text_url.removesuffix("/model/v1")
@@ -34,13 +33,18 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
         aspect_ratio: str = "16:9",
         duration: int = 5,
         input_image_data: Optional[List[str]] = None,
+        input_video_data: Optional[List[str]] = None,
         **kwargs: Any
     ) -> Dict[str, Any]:
         content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
 
         if input_image_data:
             for img_url in input_image_data:
-                content.append({"type": "image_url", "image_url": {"url": img_url}})
+                content.append({"type": "image_url", "image_url": {"url": img_url}, "role": "reference_image"})
+
+        if input_video_data:
+            for vid_url in input_video_data:
+                content.append({"type": "video_url", "video_url": {"url": vid_url}, "role": "reference_video"})
 
         return {
             "model": model,
@@ -65,14 +69,13 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
                     status = poll_res.get("status", "pending")
 
                     if status == "succeeded":
-                        #print(f"🎥 CFGPU succeeded response: {poll_res}")
                         content = poll_res.get("content") or {}
                         video_url = (
                             content.get("videoUrl")
                             or content.get("video_url")
                             or poll_res.get("video_url")
                             or poll_res.get("url")
-                        ) 
+                        )
                         if video_url and isinstance(video_url, str):
                             return video_url
                         raise Exception(f"No video URL found in successful response: {poll_res}")
@@ -90,6 +93,7 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
         duration: int = 5,
         aspect_ratio: str = "16:9",
         input_images: Optional[List[str]] = None,
+        input_videos: Optional[List[str]] = None,
         camera_fixed: bool = True,
         **kwargs: Any
     ) -> str:
@@ -102,6 +106,7 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
                 aspect_ratio=aspect_ratio,
                 duration=duration,
                 input_image_data=input_images,
+                input_video_data=input_videos,
                 **kwargs
             )
 
@@ -133,4 +138,3 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
             print(f"🎥 Error generating video with CFGPU: {str(e)}")
             traceback.print_exc()
             raise e
-
