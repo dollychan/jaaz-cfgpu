@@ -28,10 +28,11 @@ const ChatMagicGenerator: React.FC<ChatMagicGeneratorProps> = ({
 
     const handleMagicGenerate = useCallback(
         async (data: TCanvasMagicGenerateEvent) => {
-            if (!authStatus.is_logged_in) {
+            /*edited by Liu Chen
+	    if (!authStatus.is_logged_in) {
                 setShowLoginDialog(true)
                 return
-            }
+            }*/
 
             // 设置pending状态为text，表示正在处理
             setPending('text')

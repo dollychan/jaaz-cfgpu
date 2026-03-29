@@ -130,6 +130,14 @@ const PROVIDER_OPTIONS = [
     label: '月之暗面 (Kimi)',
     data: { apiUrl: 'https://api.moonshot.cn/v1/' },
   },
+  {
+    value: 'cfgpu',
+    label: 'CFGPU',
+    mediaOnly: true,
+    data: {
+      apiUrl: 'https://www.cfgpu.com/userapi/v1/model/v1/',
+    },
+  },
 ]
 
 export default function AddProviderDialog({

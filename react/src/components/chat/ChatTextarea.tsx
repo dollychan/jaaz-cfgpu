@@ -172,9 +172,10 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
 
     if (!textModel) {
       toast.error(t('chat:textarea.selectModel'))
-      if (!authStatus.is_logged_in) {
+      /*by Liu Chen
+      *if (!authStatus.is_logged_in) {
         setShowLoginDialog(true)
-      }
+      }*/
       return
     }
 
