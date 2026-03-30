@@ -145,11 +145,18 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
                 poll_count += 1
 
                 async with session.get(polling_url, headers=headers) as poll_response:
-                    poll_res = await poll_response.json()
+                    raw_text = await poll_response.text()
+                    print(f"🔍 CFGPU poll #{poll_count} HTTP {poll_response.status}, body: {raw_text[:500]}")
+                    if poll_response.status != 200:
+                        raise Exception(f"CFGPU poll failed with HTTP {poll_response.status}: {raw_text}")
+                    try:
+                        import json as _json
+                        poll_res = _json.loads(raw_text) if raw_text.strip() else {}
+                    except Exception:
+                        raise Exception(f"CFGPU poll returned non-JSON (HTTP {poll_response.status}): {raw_text[:300]}")
+                    if poll_res is None:
+                        poll_res = {}
                     status = poll_res.get("status", "pending")
-                    if poll_count == 1:
-                        # 🔍 LOG: print first poll response to inspect API-echoed fields
-                        print(f"🔍 CFGPU first poll response (full): {poll_res}")
 
                     if status == "succeeded":
                         # 🔍 LOG: full succeeded response to confirm field names
