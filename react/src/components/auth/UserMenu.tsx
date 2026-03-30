@@ -16,7 +16,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { logout } from '@/api/auth'
 import { PointsDisplay } from './PointsDisplay'
 
-export function UserMenu() {
+export function UserMenu({ className }: { className?: string }) {
   const { authStatus, refreshAuth } = useAuth()
   const { setShowLoginDialog } = useConfigs()
   const refreshModels = useRefreshModels()
@@ -35,9 +35,9 @@ export function UserMenu() {
     const initials = username ? username.substring(0, 2).toUpperCase() : 'U'
 
     return (
-      <DropdownMenu>
+      <DropdownMenu className={className}>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" className="relative p-0 h-auto">
+          <Button variant="ghost" className={`relative p-0 h-auto ${className ?? ''}`}>
             <PointsDisplay>
               <Avatar className="h-6 w-6">
                 <AvatarImage src={image_url} alt={username} />
@@ -73,7 +73,11 @@ export function UserMenu() {
 
   // 未登录状态，显示登录按钮
   return (
-    <Button variant="outline" onClick={() => setShowLoginDialog(true)}>
+    <Button
+      variant="outline"
+      className={className}
+      onClick={() => setShowLoginDialog(true)}
+    >
       {t('common:auth.login')}
     </Button>
   )
