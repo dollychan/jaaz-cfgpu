@@ -65,13 +65,14 @@ export default function TopMenu({
         <Button
           size={'sm'}
           variant="ghost"
+          className="hidden"
           onClick={() => setShowSettingsDialog(true)}
         >
           <SettingsIcon size={30} />
         </Button>
         <LanguageSwitcher />
         <ThemeButton />
-        <UserMenu />
+        <UserMenu className="hidden" />
       </div>
     </motion.div>
   )
