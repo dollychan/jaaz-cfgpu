@@ -426,7 +426,19 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         return
       }
 
-      setMessages(mergeToolCallResult(data.messages))
+      // Use functional update so we can read the current messages and
+      // reuse their __uid values by position.  Generating fresh UIDs for
+      // every message on each all_messages event causes React key churn:
+      // React sees entirely different keys and tries to unmount/remount
+      // nodes that are still being committed by a concurrent update
+      // (e.g. handleToolCallResult), which triggers an insertBefore crash.
+      setMessages((prev) => {
+        const merged = mergeToolCallResult(data.messages)
+        return merged.map((msg, idx) => ({
+          ...msg,
+          __uid: prev[idx]?.__uid ?? msg.__uid,
+        }))
+      })
       scrollToBottom()
     },
     [sessionId, scrollToBottom]
