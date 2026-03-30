@@ -49,6 +49,17 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
         """
         content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
 
+        # API limits (multimodal mode): reference_image 0–9, reference_video 0–3, reference_audio 0–3
+        if input_image_data and len(input_image_data) > 9:
+            print(f"⚠️ CFGPU: trimming input_images from {len(input_image_data)} to 9 (API max)")
+            input_image_data = input_image_data[:9]
+        if input_video_data and len(input_video_data) > 3:
+            print(f"⚠️ CFGPU: trimming input_videos from {len(input_video_data)} to 3 (API max)")
+            input_video_data = input_video_data[:3]
+        if input_audio_data and len(input_audio_data) > 3:
+            print(f"⚠️ CFGPU: trimming input_audios from {len(input_audio_data)} to 3 (API max)")
+            input_audio_data = input_audio_data[:3]
+
         if input_image_data:
             n = len(input_image_data)
             # first_frame / first_last_frame are mutually exclusive with reference_video

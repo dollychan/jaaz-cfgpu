@@ -19,7 +19,7 @@ class GenerateByCfgpuSeedance2_0FastInputSchema(BaseModel):
     )
     input_images: Optional[List[str]] = Field(
         default=None,
-        description="Optional. List of reference image URLs or file IDs. Usage depends on image_role."
+        description="Optional. Up to 9 reference image file IDs. Usage depends on image_role."
     )
     image_role: str = Field(
         default="auto",
@@ -29,16 +29,16 @@ class GenerateByCfgpuSeedance2_0FastInputSchema(BaseModel):
             "automatically switches to reference_image when input_videos or input_audios are also provided. "
             "'first_frame': use the single image as the video's starting frame (image-to-video, no input_videos/input_audios allowed). "
             "'first_last_frame': use exactly 2 images as starting and ending frames (no input_videos/input_audios allowed). "
-            "'reference_image': use 1–9 images as style/content references; compatible with input_videos and input_audios (multimodal reference-to-video)."
+            "'reference_image': use 1–9 images as style/content references; compatible with input_videos and input_audios (multimodal)."
         )
     )
     input_videos: Optional[List[str]] = Field(
         default=None,
-        description="Optional. List of reference video URLs or file IDs for video-to-video or video extension."
+        description="Optional. Up to 3 reference video file IDs for video-to-video or video extension."
     )
     input_audios: Optional[List[str]] = Field(
         default=None,
-        description="Optional. List of reference audio URLs or file IDs. MUST be used together with input_images or input_videos — audio cannot be the only reference input."
+        description="Optional. Up to 3 reference audio file IDs. MUST be used together with input_images or input_videos — audio cannot be the only reference input."
     )
     generate_audio: bool = Field(
         default=True,
