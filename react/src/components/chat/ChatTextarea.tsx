@@ -351,10 +351,28 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
   const handleFilesDrop = useCallback(
     (files: File[]) => {
       for (const file of files) {
-        uploadImageMutation(file)
+        const type = file.type.toLowerCase()
+        if (type.startsWith('image/')) {
+          uploadImageMutation(file)
+        } else if (type.startsWith('video/')) {
+          uploadVideoMutation(file)
+        } else if (type.startsWith('audio/')) {
+          uploadAudioMutation(file)
+        } else {
+          const ext = file.name.split('.').pop()?.toLowerCase() || ''
+          if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext)) {
+            uploadImageMutation(file)
+          } else if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v', '3gp'].includes(ext)) {
+            uploadVideoMutation(file)
+          } else if (['mp3', 'wav', 'aac', 'm4a', 'ogg', 'flac', 'opus'].includes(ext)) {
+            uploadAudioMutation(file)
+          } else {
+            toast.error('Unknown file type. Please upload image, video, or audio.')
+          }
+        }
       }
     },
-    [uploadImageMutation]
+    [uploadImageMutation, uploadVideoMutation, uploadAudioMutation]
   )
 
   useDrop(dropAreaRef, {
@@ -473,7 +491,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
           >
             <div className="flex items-center justify-center h-full">
               <p className="text-sm text-muted-foreground">
-                Drop images here to upload
+                Drop images, videos, or audio here to upload
               </p>
             </div>
           </motion.div>
