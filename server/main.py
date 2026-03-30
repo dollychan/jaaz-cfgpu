@@ -78,13 +78,24 @@ if os.path.exists(static_site):
     app.mount("/assets", NoCacheStaticFiles(directory=static_site), name="assets")
 
 
-@app.get("/")
-async def serve_react_app():
+def _serve_index() -> FileResponse:
     response = FileResponse(os.path.join(react_build_dir, "index.html"))
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     return response
+
+
+@app.get("/")
+async def serve_react_app():
+    return _serve_index()
+
+
+# Catch-all: serve index.html for all frontend SPA routes (e.g. /canvas/xxx).
+# Must be registered AFTER all API routers so it doesn't shadow any API endpoint.
+@app.get("/{full_path:path}")
+async def serve_react_app_catchall(full_path: str):
+    return _serve_index()
 
 print('Creating socketio app')
 socket_app = socketio.ASGIApp(sio, other_asgi_app=app, socketio_path='/socket.io')
