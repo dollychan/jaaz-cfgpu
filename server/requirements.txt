@@ -1,5 +1,6 @@
 fastapi
 uvicorn[standard]
+websockets>=12.0  # <12 has a legacy drain() race condition that breaks keepalive ping during long video generation
 anthropic
 mcp
 toml
