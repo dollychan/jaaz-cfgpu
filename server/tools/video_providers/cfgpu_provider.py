@@ -212,7 +212,8 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
                         url = item_copy.get("image_url", {}).get("url", "")
                         item_copy["image_url"] = {"url": url[:80] + "..." if len(url) > 80 else url}
                     debug_content.append(item_copy)
-                print(f"🎥 Starting CFGPU video generation (attempt {attempt}/{max_retries}), model: {model}, content: {debug_content}")
+                payload_meta = {k: v for k, v in payload.items() if k != "content"}
+                print(f"🎥 Starting CFGPU video generation (attempt {attempt}/{max_retries}), model: {model}, payload_fields: {payload_meta}, content: {debug_content}")
 
                 async with HttpClient.create_aiohttp() as session:
                     async with session.post(api_url, headers=headers, json=payload) as response:
@@ -225,8 +226,8 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
 
                         result = await response.json()
                         task_id = result.get("id") or result.get("task_id")
-                        # Log creation response to verify ratio/duration fields are accepted
-                        print(f"🎥 CFGPU task creation response: ratio={result.get('ratio')}, duration={result.get('duration')}, generateAudio={result.get('generateAudio')}")
+                        # Log full creation response to inspect which fields are accepted/echoed
+                        print(f"🎥 CFGPU task creation response (full): {result}")
 
                     if not task_id:
                         raise Exception(f"CFGPU video generation task creation failed: {result}")
