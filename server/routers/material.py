@@ -93,29 +93,28 @@ async def upload_material(file: UploadFile = File(...)):
     ftype = _file_type(tmp_name)
     stat = os.stat(dest)
 
-    # Build public URL for this file
-    cfg = _get_ml_config()
-    public_base = (cfg.get("public_base_url") or "").rstrip("/")
-
     asset_id = None
     final_name = tmp_name
     final_dest = dest
 
-    if public_base and cfg.get("ak") and cfg.get("sk") and cfg.get("group_id"):
-        public_url = f"{public_base}/api/material/serve/{tmp_name}"
-        try:
-            asset_id = await _create_asset(
-                public_url=public_url,
-                asset_type=_ASSET_TYPE_MAP.get(ftype, "Image"),
-                name=file.filename or tmp_name,
-            )
-            # Rename local file to use asset ID
-            final_name = f"{asset_id}{ext}"
-            final_dest = os.path.join(MATERIALS_DIR, final_name)
-            os.rename(dest, final_dest)
-            stat = os.stat(final_dest)
-        except Exception as e:
-            print(f"⚠️ CreateAsset failed (file kept with tmp name): {e}")
+    # TODO: 配置好 AK/SK/GroupId 后取消注释，将素材上传到火山引擎素材库
+    # cfg = _get_ml_config()
+    # public_base = (cfg.get("public_base_url") or "").rstrip("/")
+    # if public_base and cfg.get("ak") and cfg.get("sk") and cfg.get("group_id"):
+    #     public_url = f"{public_base}/api/material/serve/{tmp_name}"
+    #     try:
+    #         asset_id = await _create_asset(
+    #             public_url=public_url,
+    #             asset_type=_ASSET_TYPE_MAP.get(ftype, "Image"),
+    #             name=file.filename or tmp_name,
+    #         )
+    #         # Rename local file to use asset ID
+    #         final_name = f"{asset_id}{ext}"
+    #         final_dest = os.path.join(MATERIALS_DIR, final_name)
+    #         os.rename(dest, final_dest)
+    #         stat = os.stat(final_dest)
+    #     except Exception as e:
+    #         print(f"⚠️ CreateAsset failed (file kept with tmp name): {e}")
 
     return {
         "success": True,
