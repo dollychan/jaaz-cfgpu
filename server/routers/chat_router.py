@@ -25,6 +25,22 @@ async def chat(request: Request):
     await handle_chat(data)
     return {"status": "done"}
 
+@router.get("/session/{session_id}/running")
+async def session_running(session_id: str):
+    """
+    Check whether a LangGraph task is still actively running for the given session.
+
+    Used by the frontend when switching back to a session to determine whether
+    to restore the pending/streaming UI state.
+
+    Response:
+        {"running": true}  — task exists and has not completed
+        {"running": false} — no task, or task already done/cancelled
+    """
+    task = get_stream_task(session_id)
+    return {"running": bool(task and not task.done())}
+
+
 @router.post("/cancel/{session_id}")
 async def cancel_chat(session_id: str):
     """

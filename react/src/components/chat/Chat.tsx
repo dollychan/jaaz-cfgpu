@@ -534,13 +534,28 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
     sessionIdRef.current = sessionId
 
-    const resp = await fetch('/api/chat_session/' + sessionId)
-    const data = await resp.json()
+    // Always reset pending when entering a session so the old session's
+    // spinner doesn't bleed into the new one.  We'll restore it below
+    // if the backend task is still running.
+    setPending(false)
+
+    const [msgResp, runningResp] = await Promise.all([
+      fetch('/api/chat_session/' + sessionId),
+      fetch('/api/session/' + sessionId + '/running'),
+    ])
+    const data = await msgResp.json()
+    const { running } = await runningResp.json()
     const msgs = data?.length ? data : []
 
     setMessages(mergeToolCallResult(msgs))
     if (msgs.length > 0) {
       setInitCanvas(false)
+    }
+
+    // Restore pending spinner if the backend task is still active.
+    // Incoming all_messages / done events will keep the UI in sync.
+    if (running) {
+      setPending('tool')
     }
 
     scrollToBottom()
