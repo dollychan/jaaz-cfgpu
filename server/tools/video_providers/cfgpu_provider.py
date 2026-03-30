@@ -93,6 +93,13 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
             for aud_url in input_audio_data:
                 content.append({"type": "audio_url", "audio_url": {"url": aud_url}, "role": "reference_audio"})
 
+        # 当有音频引用时，强制打开音频合成，避免上游默认 false 导致未混音的问题
+        if input_audio_data and not generate_audio:
+            print("⚠️ Detected input_audio_data but generate_audio=False; overriding to True")
+            generate_audio = True
+
+        print(f"🎵 CFGPU payload: model={model}, generate_audio={generate_audio}, videos={len(input_video_data or [])}, audios={len(input_audio_data or [])}")
+
         return {
             "model": model,
             "content": content,
