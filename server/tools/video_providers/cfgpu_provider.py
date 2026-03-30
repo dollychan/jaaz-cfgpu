@@ -146,7 +146,7 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
 
                 async with session.get(polling_url, headers=headers) as poll_response:
                     raw_text = await poll_response.text()
-                    print(f"🔍 CFGPU poll #{poll_count} HTTP {poll_response.status}, body: {raw_text[:500]}")
+                    # print(f"🔍 CFGPU poll #{poll_count} HTTP {poll_response.status}, body: {raw_text[:500]}")
                     if poll_response.status != 200:
                         raise Exception(f"CFGPU poll failed with HTTP {poll_response.status}: {raw_text}")
                     try:
