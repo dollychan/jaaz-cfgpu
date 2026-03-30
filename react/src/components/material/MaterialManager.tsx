@@ -24,7 +24,7 @@ import {
   Upload,
   Library,
 } from 'lucide-react'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, memo } from 'react'
 import {
   browseFolderApi,
   getMediaFilesApi,
@@ -40,6 +40,61 @@ import { Button } from '../ui/button'
 import { eventBus } from '@/lib/event'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
+
+// 视频缩略图组件：用 canvas 截取第一帧
+const VideoThumbnail = memo(({ src, className }: { src: string; className?: string }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [captured, setCaptured] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    const video = document.createElement('video')
+    video.src = src
+    video.muted = true
+    video.preload = 'metadata'
+    video.crossOrigin = 'anonymous'
+
+    const onSeeked = () => {
+      if (cancelled) return
+      const canvas = canvasRef.current
+      if (!canvas) return
+      canvas.width = video.videoWidth || 320
+      canvas.height = video.videoHeight || 180
+      const ctx = canvas.getContext('2d')
+      ctx?.drawImage(video, 0, 0, canvas.width, canvas.height)
+      setCaptured(true)
+    }
+
+    video.addEventListener('loadedmetadata', () => {
+      video.currentTime = 0.5
+    })
+    video.addEventListener('seeked', onSeeked, { once: true })
+    video.load()
+
+    return () => {
+      cancelled = true
+      video.removeEventListener('seeked', onSeeked)
+      video.src = ''
+    }
+  }, [src])
+
+  return (
+    <>
+      <canvas
+        ref={canvasRef}
+        className={className}
+        style={{ display: captured ? undefined : 'none' }}
+      />
+      {!captured && (
+        <div className="flex flex-col items-center justify-center text-gray-400 w-full h-full absolute inset-0">
+          <Play className="w-8 h-8" />
+          <span className="text-xs mt-1">VIDEO</span>
+        </div>
+      )}
+    </>
+  )
+})
+VideoThumbnail.displayName = 'VideoThumbnail'
 
 interface FileSystemItem {
   name: string
@@ -672,6 +727,11 @@ export default function MaterialManager() {
                     )
                   }}
                 />
+              ) : file.type === 'video' ? (
+                <VideoThumbnail
+                  src={getFileServiceUrl(file.path)}
+                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                />
               ) : (
                 <div className="flex flex-col items-center justify-center text-gray-400">
                   {getFileIcon(file.type, 'w-8 h-8')}
@@ -747,6 +807,11 @@ export default function MaterialManager() {
                       'hidden'
                     )
                   }}
+                />
+              ) : file.type === 'video' ? (
+                <VideoThumbnail
+                  src={getFileServiceUrl(file.path)}
+                  className="w-full h-full object-cover"
                 />
               ) : (
                 getFileIcon(file.type)
