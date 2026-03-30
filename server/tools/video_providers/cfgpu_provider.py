@@ -129,7 +129,7 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
         poll_interval: int = 5,
     ) -> str:
         """Poll task status until completion or timeout."""
-        polling_url = f"{self.base_url}/video/tasks/{model}/{task_id}"
+        polling_url = f"{self.base_url}/video/generations/{task_id}"
         status = "pending"
         max_polls = timeout_seconds // poll_interval
         poll_count = 0
