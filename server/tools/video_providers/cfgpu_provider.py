@@ -149,10 +149,11 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
                             return video_url
                         raise Exception(f"No video URL found in successful response: {poll_res}")
                     elif status in ("failed", "cancelled"):
-                        # Capture every possible error field the API might return
+                        error_obj = poll_res.get("error") or {}
+                        error_code = error_obj.get("code") if isinstance(error_obj, dict) else None
                         detail = (
-                            poll_res.get("message")
-                            or poll_res.get("error")
+                            error_obj if isinstance(error_obj, dict) and error_obj
+                            else poll_res.get("message")
                             or poll_res.get("error_message")
                             or poll_res.get("reason")
                             or (poll_res.get("content") or {}).get("message")
@@ -184,54 +185,68 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
                 "Audio reference requires at least one image or video reference. "
                 "Please provide input_images or input_videos alongside input_audios."
             )
-        try:
-            api_url = f"{self.base_url}/video/generations"
-            headers = self._build_headers()
-            payload = self._build_request_payload(
-                prompt=prompt,
-                model=model,
-                aspect_ratio=aspect_ratio,
-                duration=duration,
-                input_image_data=input_images,
-                input_video_data=input_videos,
-                input_audio_data=input_audios,
-                image_role=image_role,
-                generate_audio=generate_audio,
-                **kwargs
-            )
+        max_retries = 2
+        last_exc: Exception = RuntimeError("unreachable")
+        for attempt in range(1, max_retries + 1):
+            try:
+                api_url = f"{self.base_url}/video/generations"
+                headers = self._build_headers()
+                payload = self._build_request_payload(
+                    prompt=prompt,
+                    model=model,
+                    aspect_ratio=aspect_ratio,
+                    duration=duration,
+                    input_image_data=input_images,
+                    input_video_data=input_videos,
+                    input_audio_data=input_audios,
+                    image_role=image_role,
+                    generate_audio=generate_audio,
+                    **kwargs
+                )
 
-            # Debug: print payload content types (truncate base64 for readability)
-            debug_content = []
-            for item in payload.get("content", []):
-                item_copy = dict(item)
-                if item_copy.get("type") == "image_url":
-                    url = item_copy.get("image_url", {}).get("url", "")
-                    item_copy["image_url"] = {"url": url[:80] + "..." if len(url) > 80 else url}
-                debug_content.append(item_copy)
-            print(f"🎥 Starting CFGPU video generation, model: {model}, content: {debug_content}")
+                # Debug: print payload content types (truncate base64 for readability)
+                debug_content = []
+                for item in payload.get("content", []):
+                    item_copy = dict(item)
+                    if item_copy.get("type") == "image_url":
+                        url = item_copy.get("image_url", {}).get("url", "")
+                        item_copy["image_url"] = {"url": url[:80] + "..." if len(url) > 80 else url}
+                    debug_content.append(item_copy)
+                print(f"🎥 Starting CFGPU video generation (attempt {attempt}/{max_retries}), model: {model}, content: {debug_content}")
 
-            async with HttpClient.create_aiohttp() as session:
-                async with session.post(api_url, headers=headers, json=payload) as response:
-                    if response.status != 200:
-                        try:
-                            error_data = await response.json()
-                        except Exception:
-                            error_data = await response.text()
-                        raise Exception(f"CFGPU video generation task creation failed: {error_data}")
+                async with HttpClient.create_aiohttp() as session:
+                    async with session.post(api_url, headers=headers, json=payload) as response:
+                        if response.status != 200:
+                            try:
+                                error_data = await response.json()
+                            except Exception:
+                                error_data = await response.text()
+                            raise Exception(f"CFGPU video generation task creation failed: {error_data}")
 
-                    result = await response.json()
-                    task_id = result.get("id") or result.get("task_id")
+                        result = await response.json()
+                        task_id = result.get("id") or result.get("task_id")
+                        # Log creation response to verify ratio/duration fields are accepted
+                        print(f"🎥 CFGPU task creation response: ratio={result.get('ratio')}, duration={result.get('duration')}, generateAudio={result.get('generateAudio')}")
 
-                if not task_id:
-                    raise Exception(f"CFGPU video generation task creation failed: {result}")
+                    if not task_id:
+                        raise Exception(f"CFGPU video generation task creation failed: {result}")
 
-                print(f"🎥 CFGPU task created, task_id: {task_id}")
+                    print(f"🎥 CFGPU task created, task_id: {task_id}")
 
-            video_url = await self._poll_task_status(task_id, model, headers)
-            print(f"🎥 CFGPU video generation completed, video URL: {video_url}")
-            return video_url
+                video_url = await self._poll_task_status(task_id, model, headers)
+                print(f"🎥 CFGPU video generation completed, video URL: {video_url}")
+                return video_url
 
-        except Exception as e:
-            print(f"🎥 Error generating video with CFGPU: {str(e)}")
-            traceback.print_exc()
-            raise e
+            except Exception as e:
+                last_exc = e
+                err_str = str(e)
+                is_internal = "InternalServiceError" in err_str
+                if is_internal and attempt < max_retries:
+                    wait = 10 * attempt
+                    print(f"🎥 CFGPU InternalServiceError on attempt {attempt}, retrying in {wait}s...")
+                    await asyncio.sleep(wait)
+                    continue
+                print(f"🎥 Error generating video with CFGPU: {err_str}")
+                traceback.print_exc()
+                raise e
+        raise last_exc
