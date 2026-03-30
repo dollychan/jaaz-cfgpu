@@ -1124,7 +1124,7 @@ export default function MaterialManager() {
                   <input
                     ref={uploadInputRef}
                     type="file"
-                    accept="image/*,video/*"
+                    accept="image/*,video/*,audio/*"
                     multiple
                     className="hidden"
                     onChange={handleUploadChange}
@@ -1188,6 +1188,13 @@ export default function MaterialManager() {
                             src={getFileServiceUrl(file.path)}
                             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                           />
+                        ) : file.type === 'audio' ? (
+                          <div className="flex flex-col items-center justify-center text-gray-400 gap-2">
+                            <Music className="w-10 h-10 text-green-500" />
+                            <span className="text-xs font-medium text-gray-500 truncate max-w-[90%]" title={file.name}>
+                              {file.name}
+                            </span>
+                          </div>
                         ) : (
                           <div className="flex flex-col items-center justify-center text-gray-400">
                             {getFileIcon(file.type, 'w-8 h-8')}
