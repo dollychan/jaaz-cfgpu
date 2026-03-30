@@ -452,6 +452,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     })
   }, [])
 
+  // Scroll listener — only needs to run once (ref is stable)
   useEffect(() => {
     const handleScroll = () => {
       if (scrollRef.current) {
@@ -462,7 +463,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     }
     const scrollEl = scrollRef.current
     scrollEl?.addEventListener('scroll', handleScroll)
+    return () => {
+      scrollEl?.removeEventListener('scroll', handleScroll)
+    }
+  }, [])
 
+  // Event bus subscriptions — re-subscribe whenever any handler changes
+  // (handlers change when sessionId changes via useCallback deps)
+  useEffect(() => {
     eventBus.on('Socket::Session::Delta', handleDelta)
     eventBus.on('Socket::Session::ToolCall', handleToolCall)
     eventBus.on(
@@ -479,8 +487,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     eventBus.on('Socket::Session::Error', handleError)
     eventBus.on('Socket::Session::Info', handleInfo)
     return () => {
-      scrollEl?.removeEventListener('scroll', handleScroll)
-
       eventBus.off('Socket::Session::Delta', handleDelta)
       eventBus.off('Socket::Session::ToolCall', handleToolCall)
       eventBus.off(
@@ -506,7 +512,20 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       eventBus.off('Socket::Session::Error', handleError)
       eventBus.off('Socket::Session::Info', handleInfo)
     }
-  })
+  }, [
+    handleDelta,
+    handleToolCall,
+    handleToolCallPendingConfirmation,
+    handleToolCallConfirmed,
+    handleToolCallCancelled,
+    handleToolCallArguments,
+    handleToolCallResult,
+    handleImageGenerated,
+    handleAllMessages,
+    handleDone,
+    handleError,
+    handleInfo,
+  ])
 
   const initChat = useCallback(async () => {
     if (!sessionId) {
@@ -711,10 +730,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     })}
                 </div>
               ))}
-              {pending && <ChatSpinner pending={pending} />}
-              {pending && sessionId && (
-                <ToolcallProgressUpdate sessionId={sessionId} />
-              )}
+              {/* Stable wrapper: keeps DOM structure fixed so React never needs
+                  insertBefore on a node that may have been removed concurrently */}
+              <div>
+                {pending && <ChatSpinner pending={pending} />}
+                {pending && sessionId && (
+                  <ToolcallProgressUpdate sessionId={sessionId} />
+                )}
+              </div>
             </div>
           ) : (
             <motion.div className='flex flex-col h-full p-4 items-start justify-start pt-16 select-none'>
