@@ -62,6 +62,10 @@ async def generate_video_by_cfgpu_seedance_2_0(
     input_audios: Optional[List[str]] = None,
     generate_audio: bool = True,
 ) -> str:
+    if input_audios and not generate_audio:
+        print('⚠️ generate_video_by_cfgpu_seedance_2_0: input_audios present but generate_audio=False; forcing generate_audio=True')
+        generate_audio = True
+
     return await generate_video_with_provider(
         prompt=prompt,
         resolution="480p",

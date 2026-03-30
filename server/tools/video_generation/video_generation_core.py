@@ -170,6 +170,11 @@ async def generate_video_with_provider(
         processed_input_videos = [_resolve_video_url(r) for r in input_videos] if input_videos else None
         processed_input_audios = [_resolve_audio_url(r) for r in input_audios] if input_audios else None
 
+        # ensure audio generation is enabled when audio references are present
+        if processed_input_audios and kwargs.get('generate_audio') is False:
+            print('⚠️ input_audios is provided in video generation core but generate_audio=False; forcing generate_audio=True')
+            kwargs['generate_audio'] = True
+
         # Generate video using the selected provider
         video_url = await provider_instance.generate(
             prompt=prompt,
