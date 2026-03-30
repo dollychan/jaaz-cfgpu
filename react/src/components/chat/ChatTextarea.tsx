@@ -135,6 +135,32 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
     },
   })
 
+  const { mutate: uploadVideoMutation } = useMutation({
+    mutationFn: (file: File) => uploadVideo(file),
+    onSuccess: (data) => {
+      setVideos((prev) => [...prev, { file_id: data.file_id }])
+    },
+    onError: (error) => {
+      console.error('🎥 uploadVideoMutation onError', error)
+      toast.error('Failed to upload video', {
+        description: <div>{error.toString()}</div>,
+      })
+    },
+  })
+
+  const { mutate: uploadAudioMutation } = useMutation({
+    mutationFn: (file: File) => uploadAudio(file),
+    onSuccess: (data) => {
+      setAudios((prev) => [...prev, { file_id: data.file_id }])
+    },
+    onError: (error) => {
+      console.error('🎵 uploadAudioMutation onError', error)
+      toast.error('Failed to upload audio', {
+        description: <div>{error.toString()}</div>,
+      })
+    },
+  })
+
   const handleFileUpload = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files
@@ -166,58 +192,6 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
       }
     },
     [uploadImageMutation, uploadVideoMutation, uploadAudioMutation]
-  )
-
-  const { mutate: uploadVideoMutation } = useMutation({
-    mutationFn: (file: File) => uploadVideo(file),
-    onSuccess: (data) => {
-      setVideos((prev) => [...prev, { file_id: data.file_id }])
-    },
-    onError: (error) => {
-      console.error('🎥 uploadVideoMutation onError', error)
-      toast.error('Failed to upload video', {
-        description: <div>{error.toString()}</div>,
-      })
-    },
-  })
-
-  const handleVideosUpload = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = e.target.files
-      if (files) {
-        for (const file of files) {
-          uploadVideoMutation(file)
-        }
-      }
-      e.target.value = ''
-    },
-    [uploadVideoMutation]
-  )
-
-  const { mutate: uploadAudioMutation } = useMutation({
-    mutationFn: (file: File) => uploadAudio(file),
-    onSuccess: (data) => {
-      setAudios((prev) => [...prev, { file_id: data.file_id }])
-    },
-    onError: (error) => {
-      console.error('🎵 uploadAudioMutation onError', error)
-      toast.error('Failed to upload audio', {
-        description: <div>{error.toString()}</div>,
-      })
-    },
-  })
-
-  const handleAudiosUpload = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = e.target.files
-      if (files) {
-        for (const file of files) {
-          uploadAudioMutation(file)
-        }
-      }
-      e.target.value = ''
-    },
-    [uploadAudioMutation]
   )
 
   const handleCancelChat = useCallback(async () => {
