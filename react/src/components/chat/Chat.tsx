@@ -188,39 +188,36 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         return
       }
 
-      const existToolCall = messages.find(
-        (m) =>
-          m.role === 'assistant' &&
-          m.tool_calls &&
-          m.tool_calls.find((t) => t.id == data.id)
-      )
-
-      if (existToolCall) {
-        return
-      }
-
-      setMessages(
-        produce((prev) => {
-          console.log('👇tool_call event get', data)
-          setPending('tool')
-          prev.push(
+      // Use functional update so the duplicate check reads the latest state,
+      // not a stale closure value (messages was missing from deps before).
+      // Also move setPending outside of produce — calling setState inside a
+      // produce callback triggers a nested React update during state computation,
+      // which can corrupt the fiber tree and cause insertBefore DOM crashes.
+      setMessages((prev) => {
+        const exists = prev.some(
+          (m) =>
+            m.role === 'assistant' &&
+            m.tool_calls?.some((t) => t.id === data.id)
+        )
+        if (exists) return prev
+        console.log('👇tool_call event get', data)
+        return produce(prev, (draft) => {
+          draft.push(
             ensureMessageUid({
               role: 'assistant',
               content: '',
               tool_calls: [
                 {
                   type: 'function',
-                  function: {
-                    name: data.name,
-                    arguments: '',
-                  },
+                  function: { name: data.name, arguments: '' },
                   id: data.id,
                 },
               ],
             })
           )
         })
-      )
+      })
+      setPending('tool')
 
       setExpandingToolCalls(
         produce((prev) => {
@@ -248,10 +245,10 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         return
       }
 
+      console.log('👇tool_call_pending_confirmation event get', data)
+      setPending('tool')
       setMessages(
         produce((prev) => {
-          console.log('👇tool_call_pending_confirmation event get', data)
-          setPending('tool')
           prev.push(
             ensureMessageUid({
               role: 'assistant',
@@ -349,9 +346,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         return
       }
 
+      // Move setPending outside produce — setState inside produce causes a
+      // nested React update during state computation → insertBefore DOM crash.
+      setPending('tool')
       setMessages(
         produce((prev) => {
-          setPending('tool')
           const lastMessage = prev.find(
             (m) =>
               m.role === 'assistant' &&
