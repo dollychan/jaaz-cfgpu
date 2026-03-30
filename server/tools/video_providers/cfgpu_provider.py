@@ -125,7 +125,7 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
         task_id: str,
         model: str,
         headers: Dict[str, str],
-        timeout_seconds: int = 1800,  # 30 minutes
+        timeout_seconds: int = 7200,  # 2 hours
         poll_interval: int = 5,
     ) -> str:
         """Poll task status until completion or timeout."""
