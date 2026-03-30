@@ -149,7 +149,16 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
                             return video_url
                         raise Exception(f"No video URL found in successful response: {poll_res}")
                     elif status in ("failed", "cancelled"):
-                        detail = poll_res.get("message", f"Task failed with status: {status}")
+                        # Capture every possible error field the API might return
+                        detail = (
+                            poll_res.get("message")
+                            or poll_res.get("error")
+                            or poll_res.get("error_message")
+                            or poll_res.get("reason")
+                            or (poll_res.get("content") or {}).get("message")
+                            or f"Task {status} with no details"
+                        )
+                        print(f"🎥 CFGPU task failed, full response: {poll_res}")
                         raise Exception(f"CFGPU video generation failed: {detail}")
 
         raise Exception(f"Task polling finished with unexpected status: {status}")
