@@ -22,6 +22,10 @@ def generate_video_file_id():
     return "vi_" + generate(size=8)
 
 
+def generate_audio_file_id():
+    return "au_" + generate(size=8)
+
+
 async def get_video_info_and_save(
     url: str, file_path_without_extension: str
 ) -> tuple[str, int, int, str]:

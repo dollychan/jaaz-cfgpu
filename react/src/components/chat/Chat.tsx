@@ -449,14 +449,18 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     [sessionId, scrollToBottom, authStatus.is_logged_in, queryClient]
   )
 
-  const handleError = useCallback((data: TEvents['Socket::Session::Error']) => {
-    setPending(false)
-    toast.error('Error: ' + data.error, {
-      closeButton: true,
-      duration: 3600 * 1000,
-      style: { color: 'red' },
-    })
-  }, [])
+  const handleError = useCallback(
+    (data: TEvents['Socket::Session::Error']) => {
+      if (data.session_id && data.session_id !== sessionId) return
+      setPending(false)
+      toast.error('Error: ' + (data.error ?? 'Unknown error'), {
+        closeButton: true,
+        duration: 3600 * 1000,
+        style: { color: 'red' },
+      })
+    },
+    [sessionId]
+  )
 
   const handleInfo = useCallback((data: TEvents['Socket::Session::Info']) => {
     toast.info(data.info, {

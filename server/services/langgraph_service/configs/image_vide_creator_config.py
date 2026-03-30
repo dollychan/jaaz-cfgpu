@@ -68,6 +68,17 @@ You MUST:
 3. The system automatically converts video file_ids to the correct format - NEVER ask the user for a public URL
 
 CRITICAL: ALWAYS pass video file_ids directly to the tool's input_videos parameter. Do NOT say you cannot use the file_id.
+
+AUDIO INPUT DETECTION:
+When the user's message contains input audios in XML format like:
+<input_audios></input_audios>
+You MUST:
+1. Parse the XML to extract file_id attributes from <audio> tags
+2. Pass the extracted file_id(s) in the input_audios parameter as a list when calling video generation tools
+3. The system automatically converts audio file_ids to the correct format - NEVER ask the user for a public URL
+4. Audio MUST be accompanied by at least one input_image or input_video — never pass audio as the only reference
+
+CRITICAL: ALWAYS pass audio file_ids directly to the tool's input_audios parameter. Do NOT say you cannot use the file_id.
 """
 
         batch_generation_prompt = """

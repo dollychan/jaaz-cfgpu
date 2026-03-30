@@ -1,6 +1,6 @@
 import { cancelChat } from '@/api/chat'
 import { cancelMagicGenerate } from '@/api/magic'
-import { uploadImage, uploadVideo } from '@/api/upload'
+import { uploadImage, uploadVideo, uploadAudio } from '@/api/upload'
 import { Button } from '@/components/ui/button'
 import { useConfigs } from '@/contexts/configs'
 import {
@@ -88,6 +88,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
 
   const imageInputRef = useRef<HTMLInputElement>(null)
   const videoInputRef = useRef<HTMLInputElement>(null)
+  const audioInputRef = useRef<HTMLInputElement>(null)
   const [videos, setVideos] = useState<{ file_id: string }[]>([])
   const [audios, setAudios] = useState<{ file_id: string }[]>([])
 
@@ -151,14 +152,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
   const { mutate: uploadVideoMutation } = useMutation({
     mutationFn: (file: File) => uploadVideo(file),
     onSuccess: (data) => {
-      console.log('🎥 uploadVideoMutation onSuccess', data)
-      const ext = data.file_id.split('.').pop()?.toLowerCase()
-      const audioExts = ['mp3', 'wav', 'aac', 'm4a', 'ogg', 'flac', 'opus']
-      if (ext && audioExts.includes(ext)) {
-        setAudios((prev) => [...prev, { file_id: data.file_id }])
-      } else {
-        setVideos((prev) => [...prev, { file_id: data.file_id }])
-      }
+      setVideos((prev) => [...prev, { file_id: data.file_id }])
     },
     onError: (error) => {
       console.error('🎥 uploadVideoMutation onError', error)
@@ -176,8 +170,35 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
           uploadVideoMutation(file)
         }
       }
+      e.target.value = ''
     },
     [uploadVideoMutation]
+  )
+
+  const { mutate: uploadAudioMutation } = useMutation({
+    mutationFn: (file: File) => uploadAudio(file),
+    onSuccess: (data) => {
+      setAudios((prev) => [...prev, { file_id: data.file_id }])
+    },
+    onError: (error) => {
+      console.error('🎵 uploadAudioMutation onError', error)
+      toast.error('Failed to upload audio', {
+        description: <div>{error.toString()}</div>,
+      })
+    },
+  })
+
+  const handleAudiosUpload = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files
+      if (files) {
+        for (const file of files) {
+          uploadAudioMutation(file)
+        }
+      }
+      e.target.value = ''
+    },
+    [uploadAudioMutation]
   )
 
   const handleCancelChat = useCallback(async () => {
@@ -263,29 +284,35 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
       text_content += `\n</input_audios>`
     }
 
-    // Fetch images as base64
+    // Fetch images as base64; skip any that fail to load
     const imagePromises = images.map(async (image) => {
-      const response = await fetch(`/api/file/${image.file_id}`)
-      const blob = await response.blob()
-      return new Promise<string>((resolve) => {
-        const reader = new FileReader()
-        reader.onloadend = () => resolve(reader.result as string)
-        reader.readAsDataURL(blob)
-      })
+      try {
+        const response = await fetch(`/api/file/${image.file_id}`)
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        const blob = await response.blob()
+        return await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onloadend = () => resolve(reader.result as string)
+          reader.onerror = () => reject(reader.error)
+          reader.readAsDataURL(blob)
+        })
+      } catch (err) {
+        console.error(`Failed to load image ${image.file_id}:`, err)
+        return null
+      }
     })
 
-    const base64Images = await Promise.all(imagePromises)
+    const base64Results = await Promise.all(imagePromises)
+    const base64Images = base64Results.filter((b): b is string => b !== null)
 
     const final_content = [
       {
         type: 'text',
         text: text_content as string,
       },
-      ...images.map((image, index) => ({
+      ...base64Images.map((url) => ({
         type: 'image_url',
-        image_url: {
-          url: base64Images[index],
-        },
+        image_url: { url },
       })),
     ] as MessageContent[]
 
@@ -298,6 +325,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
 
     setImages([])
     setVideos([])
+    setAudios([])
     setPrompt('')
 
     onSendMessages(newMessage, {
@@ -312,6 +340,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
     onSendMessages,
     images,
     videos,
+    audios,
     messages,
     t,
     selectedAspectRatio,
@@ -609,9 +638,17 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
           <input
             ref={videoInputRef}
             type="file"
-            accept="video/*,audio/mpeg"
+            accept="video/*"
             multiple
             onChange={handleVideosUpload}
+            hidden
+          />
+          <input
+            ref={audioInputRef}
+            type="file"
+            accept="audio/*"
+            multiple
+            onChange={handleAudiosUpload}
             hidden
           />
           <Button
@@ -627,6 +664,13 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
             onClick={() => videoInputRef.current?.click()}
           >
             <Video className="size-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => audioInputRef.current?.click()}
+          >
+            <Music className="size-4" />
           </Button>
 
           <ModelSelectorV3 />

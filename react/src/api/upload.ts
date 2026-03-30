@@ -12,6 +12,10 @@ export async function uploadImage(
     method: 'POST',
     body: formData,
   })
+  if (!response.ok) {
+    const err = await response.text()
+    throw new Error(`Upload image failed (${response.status}): ${err}`)
+  }
   return await response.json()
 }
 
@@ -24,5 +28,25 @@ export async function uploadVideo(
     method: 'POST',
     body: formData,
   })
+  if (!response.ok) {
+    const err = await response.text()
+    throw new Error(`Upload video failed (${response.status}): ${err}`)
+  }
+  return await response.json()
+}
+
+export async function uploadAudio(
+  file: File
+): Promise<{ file_id: string; url: string }> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const response = await fetch('/api/upload_audio', {
+    method: 'POST',
+    body: formData,
+  })
+  if (!response.ok) {
+    const err = await response.text()
+    throw new Error(`Upload audio failed (${response.status}): ${err}`)
+  }
   return await response.json()
 }

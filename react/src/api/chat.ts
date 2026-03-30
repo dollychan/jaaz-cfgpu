@@ -3,6 +3,7 @@ import { ModelInfo, ToolInfo } from './model'
 
 export const getChatSession = async (sessionId: string) => {
   const response = await fetch(`/api/chat_session/${sessionId}`)
+  if (!response.ok) return [] as Message[]
   const data = await response.json()
   return data as Message[]
 }
@@ -29,6 +30,10 @@ export const sendMessages = async (payload: {
       system_prompt: payload.systemPrompt,
     }),
   })
+  if (!response.ok) {
+    const err = await response.text()
+    throw new Error(`Send messages failed (${response.status}): ${err}`)
+  }
   const data = await response.json()
   return data as Message[]
 }
@@ -37,5 +42,6 @@ export const cancelChat = async (sessionId: string) => {
   const response = await fetch(`/api/cancel/${sessionId}`, {
     method: 'POST',
   })
+  if (!response.ok) return
   return await response.json()
 }

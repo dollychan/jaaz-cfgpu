@@ -2,7 +2,7 @@ from fastapi.responses import FileResponse
 from fastapi.concurrency import run_in_threadpool
 from common import DEFAULT_PORT
 from tools.utils.image_canvas_utils import generate_file_id
-from tools.video_generation_utils import generate_video_file_id
+from tools.video_generation_utils import generate_video_file_id, generate_audio_file_id
 from services.config_service import FILES_DIR
 
 from PIL import Image
@@ -22,8 +22,8 @@ os.makedirs(FILES_DIR, exist_ok=True)
 async def upload_video(file: UploadFile = File(...), max_size_mb: float = 200.0):
     print('🎥 upload_video file', file.filename, 'content_type', file.content_type)
     content_type = file.content_type or ''
-    if not (content_type.startswith('video/') or content_type.startswith('audio/')):
-        raise HTTPException(status_code=400, detail=f"Invalid content type '{content_type}'. Expected video/* or audio/*." )
+    if not content_type.startswith('video/'):
+        raise HTTPException(status_code=400, detail=f"Invalid content type '{content_type}'. Expected video/*.")
 
     content = await file.read()
     size_mb = len(content) / (1024 * 1024)
@@ -40,12 +40,8 @@ async def upload_video(file: UploadFile = File(...), max_size_mb: float = 200.0)
         extension = 'mov'
     elif 'webm' in content_type or filename.endswith('.webm'):
         extension = 'webm'
-    elif 'mp3' in content_type or filename.endswith('.mp3'):
-        extension = 'mp3'
-    elif 'wav' in content_type or filename.endswith('.wav'):
-        extension = 'wav'
     else:
-        extension = 'mp4' if content_type.startswith('video/') else 'mp3'
+        extension = 'mp4'
 
     file_path = os.path.join(FILES_DIR, f'{file_id}.{extension}')
     async with aiofiles.open(file_path, 'wb') as f:
@@ -56,6 +52,37 @@ async def upload_video(file: UploadFile = File(...), max_size_mb: float = 200.0)
         'file_id': f'{file_id}.{extension}',
         'url': f'/api/file/{file_id}.{extension}',
     }
+
+@router.post("/upload_audio")
+async def upload_audio(file: UploadFile = File(...), max_size_mb: float = 15.0):
+    print('🎵 upload_audio file', file.filename, 'content_type', file.content_type)
+    content_type = file.content_type or ''
+    if not content_type.startswith('audio/'):
+        raise HTTPException(status_code=400, detail=f"Invalid content type '{content_type}'. Expected audio/*.")
+
+    content = await file.read()
+    size_mb = len(content) / (1024 * 1024)
+    if size_mb > max_size_mb:
+        raise HTTPException(status_code=413, detail=f"File too large ({size_mb:.1f} MB > {max_size_mb} MB limit).")
+
+    file_id = generate_audio_file_id()
+    filename = file.filename or 'audio.mp3'
+
+    if 'wav' in content_type or filename.endswith('.wav'):
+        extension = 'wav'
+    else:
+        extension = 'mp3'
+
+    file_path = os.path.join(FILES_DIR, f'{file_id}.{extension}')
+    async with aiofiles.open(file_path, 'wb') as f:
+        await f.write(content)
+
+    print(f'🎵 upload_audio saved to {file_path} ({size_mb:.1f} MB)')
+    return {
+        'file_id': f'{file_id}.{extension}',
+        'url': f'/api/file/{file_id}.{extension}',
+    }
+
 
 # 上传图片接口，支持表单提交
 @router.post("/upload_image")
