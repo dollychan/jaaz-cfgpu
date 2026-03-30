@@ -32,6 +32,15 @@ from tools.generate_image_by_doubao_seedream_3_jaaz import (
 from tools.generate_image_by_doubao_seedream_3_volces import (
     generate_image_by_doubao_seedream_3_volces,
 )
+from tools.generate_image_by_doubao_seedream_4_0_cfgpu import (
+    generate_image_by_doubao_seedream_4_0_cfgpu,
+)
+from tools.generate_image_by_doubao_seedream_4_5_cfgpu import (
+    generate_image_by_doubao_seedream_4_5_cfgpu,
+)
+from tools.generate_image_by_doubao_seedream_5_0_cfgpu import (
+    generate_image_by_doubao_seedream_5_0_cfgpu,
+)
 from tools.generate_image_by_doubao_seededit_3_volces import (
     edit_image_by_doubao_seededit_3_volces,
 )
@@ -122,6 +131,24 @@ TOOL_MAPPING: Dict[str, ToolInfo] = {
         "type": "image",
         "provider": "volces",
         "tool_function": edit_image_by_doubao_seededit_3_volces,
+    },
+    "generate_image_by_doubao_seedream_4_0_cfgpu": {
+        "display_name": "Doubao Seedream 4.0 by CFGPU",
+        "type": "image",
+        "provider": "cfgpu",
+        "tool_function": generate_image_by_doubao_seedream_4_0_cfgpu,
+    },
+    "generate_image_by_doubao_seedream_4_5_cfgpu": {
+        "display_name": "Doubao Seedream 4.5 by CFGPU",
+        "type": "image",
+        "provider": "cfgpu",
+        "tool_function": generate_image_by_doubao_seedream_4_5_cfgpu,
+    },
+    "generate_image_by_doubao_seedream_5_0_cfgpu": {
+        "display_name": "Doubao Seedream 5.0 by CFGPU",
+        "type": "image",
+        "provider": "cfgpu",
+        "tool_function": generate_image_by_doubao_seedream_5_0_cfgpu,
     },
     "generate_video_by_seedance_v1_jaaz": {
         "display_name": "Doubao Seedance v1",

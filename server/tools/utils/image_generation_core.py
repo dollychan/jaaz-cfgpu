@@ -14,6 +14,7 @@ from ..image_providers.openai_provider import OpenAIImageProvider
 from ..image_providers.replicate_provider import ReplicateImageProvider
 from ..image_providers.volces_provider import VolcesProvider
 from ..image_providers.wavespeed_provider import WavespeedProvider
+from ..image_providers.cfgpu_provider import CfgpuImageProvider
 
 # from ..image_providers.comfyui_provider import ComfyUIProvider
 from .image_canvas_utils import (
@@ -27,6 +28,7 @@ IMAGE_PROVIDERS: dict[str, ImageProviderBase] = {
     "replicate": ReplicateImageProvider(),
     "volces": VolcesProvider(),
     "wavespeed": WavespeedProvider(),
+    "cfgpu": CfgpuImageProvider(),
 }
 
 
@@ -39,6 +41,7 @@ async def generate_image_with_provider(
     prompt: str,
     aspect_ratio: str = "1:1",
     input_images: Optional[list[str]] = None,
+    **kwargs: Any,
 ) -> str:
     """
     通用图像生成函数，支持不同的模型和提供商
@@ -87,6 +90,7 @@ async def generate_image_with_provider(
         aspect_ratio=aspect_ratio,
         input_images=processed_input_images,
         metadata=metadata,
+        **kwargs,
     )
 
     # Save image to canvas
