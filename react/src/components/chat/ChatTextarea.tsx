@@ -554,7 +554,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
           <input
             ref={videoInputRef}
             type="file"
-            accept="video/*"
+            accept="video/*,audio/mpeg"
             multiple
             onChange={handleVideosUpload}
             hidden

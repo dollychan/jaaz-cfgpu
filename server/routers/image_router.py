@@ -22,8 +22,8 @@ os.makedirs(FILES_DIR, exist_ok=True)
 async def upload_video(file: UploadFile = File(...), max_size_mb: float = 200.0):
     print('🎥 upload_video file', file.filename, 'content_type', file.content_type)
     content_type = file.content_type or ''
-    if not content_type.startswith('video/'):
-        raise HTTPException(status_code=400, detail=f"Invalid content type '{content_type}'. Expected video/*.")
+    if not (content_type.startswith('video/') or content_type.startswith('audio/')):
+        raise HTTPException(status_code=400, detail=f"Invalid content type '{content_type}'. Expected video/* or audio/*." )
 
     content = await file.read()
     size_mb = len(content) / (1024 * 1024)
@@ -40,8 +40,12 @@ async def upload_video(file: UploadFile = File(...), max_size_mb: float = 200.0)
         extension = 'mov'
     elif 'webm' in content_type or filename.endswith('.webm'):
         extension = 'webm'
+    elif 'mp3' in content_type or filename.endswith('.mp3'):
+        extension = 'mp3'
+    elif 'wav' in content_type or filename.endswith('.wav'):
+        extension = 'wav'
     else:
-        extension = 'mp4'
+        extension = 'mp4' if content_type.startswith('video/') else 'mp3'
 
     file_path = os.path.join(FILES_DIR, f'{file_id}.{extension}')
     async with aiofiles.open(file_path, 'wb') as f:
