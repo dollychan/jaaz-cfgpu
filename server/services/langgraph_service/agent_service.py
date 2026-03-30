@@ -81,7 +81,8 @@ async def langgraph_multi_agent(
     session_id: str,
     text_model: ModelInfo,
     tool_list: List[ToolInfoJson],
-    system_prompt: Optional[str] = None
+    system_prompt: Optional[str] = None,
+    agent_mode: bool = False
 ) -> None:
     """多智能体处理函数
 
@@ -104,7 +105,8 @@ async def langgraph_multi_agent(
         agents = AgentManager.create_agents(
             text_model_instance,
             tool_list,  # 传入所有注册的工具
-            system_prompt or ""
+            system_prompt or "",
+            agent_mode=agent_mode
         )
         agent_names = [agent.name for agent in agents]
         print('👇agent_names', agent_names)

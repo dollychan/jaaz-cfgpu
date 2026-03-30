@@ -614,7 +614,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   }
 
   const onSendMessages = useCallback(
-    (data: Message[], configs: { textModel: Model; toolList: ToolInfo[] }) => {
+    (data: Message[], configs: { textModel: Model; toolList: ToolInfo[]; agentMode: boolean }) => {
       setPending('text')
       setMessages(ensureMessagesUids(data))
 
@@ -624,6 +624,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         newMessages: data,
         textModel: configs.textModel,
         toolList: configs.toolList,
+        agentMode: configs.agentMode,
         systemPrompt:
           localStorage.getItem('system_prompt') || DEFAULT_SYSTEM_PROMPT,
       })

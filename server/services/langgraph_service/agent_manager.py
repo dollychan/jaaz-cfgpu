@@ -18,44 +18,42 @@ class AgentManager:
     def create_agents(
         model: Any,
         tool_list: List[ToolInfoJson],
-        system_prompt: str = ""
+        system_prompt: str = "",
+        agent_mode: bool = False
     ) -> List[CompiledGraph]:
         """创建所有智能体
 
         Args:
             model: 语言模型实例
-            registered_tools: 已注册的工具名称列表
+            tool_list: 工具列表
             system_prompt: 系统提示词
+            agent_mode: 是否启用 Agent 模式（先用 text model 制定计划，再执行）
+                        False（默认）= 直接调用 image/video 工具，不经过规划
+                        True = 先由 PlannerAgent 制定计划，再由 ImageVideoCreatorAgent 执行
 
         Returns:
             List[Any]: 创建好的智能体列表
         """
         # 为不同类型的智能体过滤合适的工具
-        image_tools =  [tool for tool in tool_list if tool.get('type') == 'image']
+        image_tools = [tool for tool in tool_list if tool.get('type') == 'image']
         video_tools = [tool for tool in tool_list if tool.get('type') == 'video']
 
         print(f"📸 图像工具: {image_tools}")
         print(f"🎬 视频工具: {video_tools}")
-
-        planner_config = PlannerAgentConfig()
-        planner_agent = AgentManager._create_langgraph_agent(
-            model, planner_config)
-
-        # image_designer_config = ImageDesignerAgentConfig(
-        #     image_tools, system_prompt)
-        # print('👇image_designer_config tools', image_designer_config.tools)
-        # print('👇image_designer_config system_prompt', image_designer_config.system_prompt)
-        # image_designer_agent = AgentManager._create_langgraph_agent(
-        #     model, image_designer_config)
-
-        # video_designer_config = VideoDesignerAgentConfig(
-        #     video_tools)
-        # video_designer_agent = AgentManager._create_langgraph_agent(
-        #     model, video_designer_config)
+        print(f"🤖 Agent 模式: {agent_mode}")
 
         image_video_creator_config = ImageVideoCreatorAgentConfig(tool_list)
         image_video_creator_agent = AgentManager._create_langgraph_agent(
             model, image_video_creator_config)
+
+        if not agent_mode:
+            # 直接模式：只创建 ImageVideoCreatorAgent，跳过 Planner
+            return [image_video_creator_agent]
+
+        # Agent 模式：先 PlannerAgent 制定计划，再 ImageVideoCreatorAgent 执行
+        planner_config = PlannerAgentConfig()
+        planner_agent = AgentManager._create_langgraph_agent(
+            model, planner_config)
 
         return [planner_agent, image_video_creator_agent]
 

@@ -16,6 +16,7 @@ import { useDrop } from 'ahooks'
 import { produce } from 'immer'
 import {
   ArrowUp,
+  Bot,
   Loader2,
   PlusIcon,
   Square,
@@ -53,6 +54,7 @@ type ChatTextareaProps = {
     configs: {
       textModel: Model
       toolList: ToolInfo[]
+      agentMode: boolean
     }
   ) => void
   onCancelChat?: () => void
@@ -90,6 +92,10 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
   const durationSliderRef = useRef<HTMLDivElement>(null)
   const MIN_DURATION = 4
   const MAX_DURATION = 15
+
+  const [agentMode, setAgentMode] = useState<boolean>(() => {
+    return localStorage.getItem('agent_mode') === 'true'
+  })
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [videos, setVideos] = useState<{ file_id: string }[]>([])
@@ -332,6 +338,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
     onSendMessages(newMessage, {
       textModel: textModel,
       toolList: selectedTools && selectedTools.length > 0 ? selectedTools : [],
+      agentMode,
     })
   }, [
     pending,
@@ -347,6 +354,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
     selectedAspectRatio,
     quantity,
     duration,
+    agentMode,
     authStatus.is_logged_in,
     setShowLoginDialog,
     balance,
@@ -773,6 +781,22 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
               )}
             </AnimatePresence>
           </div>
+
+          {/* Agent Mode Toggle */}
+          <Button
+            variant={agentMode ? 'default' : 'outline'}
+            size="sm"
+            className="flex items-center gap-1"
+            onClick={() => {
+              const next = !agentMode
+              setAgentMode(next)
+              localStorage.setItem('agent_mode', String(next))
+            }}
+            title={agentMode ? t('chat:textarea.agentModeOn', 'Agent mode: ON (plan then generate)') : t('chat:textarea.agentModeOff', 'Agent mode: OFF (generate directly)')}
+          >
+            <Bot className="size-4" />
+            <span className="text-sm">Agent</span>
+          </Button>
 
           {/* Duration Selector */}
           <div className="relative" ref={durationSliderRef}>
