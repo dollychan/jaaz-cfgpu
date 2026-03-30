@@ -8,6 +8,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import SettingProviders from './providers'
 import SettingProxy from './proxy'
+import SettingMaterialLibrary from './material-library'
 import SettingSidebar, { SettingSidebarType } from './sidebar'
 import { X } from 'lucide-react'
 
@@ -20,6 +21,8 @@ const SettingsDialog = () => {
     switch (current) {
       case 'proxy':
         return <SettingProxy />
+      case 'material_library':
+        return <SettingMaterialLibrary />
       case 'provider':
       default:
         return <SettingProviders />

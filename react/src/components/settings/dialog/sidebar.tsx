@@ -10,10 +10,10 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
 import { cn } from '@/lib/utils'
-import { PlugZap, Network, ChevronLeft } from 'lucide-react'
+import { PlugZap, Network, ChevronLeft, Library } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-export type SettingSidebarType = 'provider' | 'proxy'
+export type SettingSidebarType = 'provider' | 'proxy' | 'material_library'
 
 type SettingSidebar = {
   current: SettingSidebarType
@@ -43,6 +43,11 @@ const SettingSidebar: React.FC<SettingSidebar> = ({
       type: 'proxy',
       title: 'settings:proxy:title',
       icon: Network,
+    },
+    {
+      type: 'material_library',
+      title: '素材资产库',
+      icon: Library,
     },
   ]
 

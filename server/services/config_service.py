@@ -68,7 +68,13 @@ DEFAULT_PROVIDERS_CONFIG: AppConfig = {
         'url': 'https://www.cfgpu.com/userapi/v1/model/v1/',
         'api_key': '',
     },
-
+    'material_library': {
+        'ak': '',
+        'sk': '',
+        'group_id': '',
+        'project_name': 'default',
+        'public_base_url': '',
+    },
 }
 
 SERVER_DIR = os.path.dirname(os.path.dirname(__file__))

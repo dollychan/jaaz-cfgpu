@@ -236,7 +236,8 @@ export default function MaterialManager() {
   const myAssetsPath = useRef<string>('')
   const [activeTab, setActiveTab] = useState<'myAssets' | 'materialLibrary'>('myAssets')
   const [materialFiles, setMaterialFiles] = useState<Array<{
-    name: string; path: string; size: number; mtime: number; type: string; url: string
+    name: string; asset_id: string | null; display_name: string;
+    path: string; size: number; mtime: number; type: string; url: string
   }>>([])
   const [materialLoading, setMaterialLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -1086,7 +1087,9 @@ export default function MaterialManager() {
                         )}
                       </div>
                       <div className="p-3">
-                        <div className="text-sm font-medium truncate" title={file.name}>{file.name}</div>
+                        <div className="text-xs font-mono text-gray-700 dark:text-gray-300 truncate" title={file.display_name}>
+                          {file.display_name}
+                        </div>
                         <div className="text-xs text-gray-500 mt-1">{formatFileSize(file.size)}</div>
                       </div>
                     </div>
