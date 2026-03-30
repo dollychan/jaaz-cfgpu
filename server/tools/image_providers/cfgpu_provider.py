@@ -37,7 +37,9 @@ class CfgpuImageProvider(ImageProviderBase):
             prompt: Image generation prompt
             model: Model name (e.g. doubao-seedream-5-0-260128)
             aspect_ratio: Ignored — use `size` to control output dimensions
-            input_images: Not supported by this model
+            input_images: Optional reference images as base64 data URLs (data:image/<fmt>;base64,...).
+                          Supported by doubao-seedream-4.0/4.5/5.0-lite; up to 14 images.
+                          NOT supported by doubao-seedream-3.0-t2i.
             size: Output size preset (e.g. "1K", "2K", "4K"). Default "2K"
 
         Returns:
@@ -50,7 +52,7 @@ class CfgpuImageProvider(ImageProviderBase):
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {api_key}",
             }
-            payload = {
+            payload: dict[str, Any] = {
                 "model": model,
                 "prompt": prompt,
                 "sequential_image_generation": "disabled",
@@ -60,7 +62,13 @@ class CfgpuImageProvider(ImageProviderBase):
                 "watermark": False,
             }
 
-            print(f"🖼️ CFGPU image generation: model={model}, size={size}")
+            # Pass reference images when provided.
+            # Single image → string; multiple images → array (max 14 per API docs).
+            if input_images:
+                clamped = input_images[:14]
+                payload["image"] = clamped[0] if len(clamped) == 1 else clamped
+
+            print(f"🖼️ CFGPU image generation: model={model}, size={size}, images={len(input_images) if input_images else 0}")
 
             async with HttpClient.create_aiohttp() as session:
                 async with session.post(url, headers=headers, json=payload) as response:
