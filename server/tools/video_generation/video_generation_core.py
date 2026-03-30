@@ -27,7 +27,9 @@ _AUDIO_EXTENSIONS = {'.mp3', '.wav', '.aac', '.m4a', '.ogg', '.flac', '.opus'}
 
 # Public base URL of this jaaz server, used so external APIs can fetch local video files.
 # Set JAAZ_SERVER_URL env var to the publicly accessible address, e.g. http://1.2.3.4:57988
-_SERVER_BASE_URL = os.environ.get("JAAZ_SERVER_URL", "http://127.0.0.1:57988").rstrip("/")
+# Read at call time (not module import time) so changes to the env var after startup take effect.
+def _get_server_base_url() -> str:
+    return os.environ.get("JAAZ_SERVER_URL", "http://127.0.0.1:57988").rstrip("/")
 
 
 async def _resolve_image_url(ref: str) -> str:
@@ -79,7 +81,7 @@ def _resolve_local_to_server_url(
         if fname == ref or os.path.splitext(fname)[0] == ref_stem:
             ext = os.path.splitext(fname)[1].lower()
             if allowed_extensions is None or ext in allowed_extensions:
-                server_url = f"{_SERVER_BASE_URL}/api/file/{fname}"
+                server_url = f"{_get_server_base_url()}/api/file/{fname}"
                 print(f"🔗 Resolved local {label} '{ref}' → {server_url}")
                 return server_url
     print(f"⚠️ Local {label} '{ref}' not found, passing as-is")
