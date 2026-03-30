@@ -24,6 +24,7 @@ import {
   ChevronDown,
   Hash,
   Video,
+  Music,
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import Textarea, { TextAreaRef } from 'rc-textarea'
@@ -88,6 +89,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
   const imageInputRef = useRef<HTMLInputElement>(null)
   const videoInputRef = useRef<HTMLInputElement>(null)
   const [videos, setVideos] = useState<{ file_id: string }[]>([])
+  const [audios, setAudios] = useState<{ file_id: string }[]>([])
 
   // 充值按钮组件
   const RechargeContent = useCallback(() => (
@@ -150,7 +152,13 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
     mutationFn: (file: File) => uploadVideo(file),
     onSuccess: (data) => {
       console.log('🎥 uploadVideoMutation onSuccess', data)
-      setVideos((prev) => [...prev, { file_id: data.file_id }])
+      const ext = data.file_id.split('.').pop()?.toLowerCase()
+      const audioExts = ['mp3', 'wav', 'aac', 'm4a', 'ogg', 'flac', 'opus']
+      if (ext && audioExts.includes(ext)) {
+        setAudios((prev) => [...prev, { file_id: data.file_id }])
+      } else {
+        setVideos((prev) => [...prev, { file_id: data.file_id }])
+      }
     },
     onError: (error) => {
       console.error('🎥 uploadVideoMutation onError', error)
@@ -245,6 +253,14 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
         text_content += `\n<video index="${index + 1}" file_id="${video.file_id}" />`
       })
       text_content += `\n</input_videos>`
+    }
+
+    if (audios.length > 0) {
+      text_content += `\n\n<input_audios count="${audios.length}">`
+      audios.forEach((audio, index) => {
+        text_content += `\n<audio index="${index + 1}" file_id="${audio.file_id}" />`
+      })
+      text_content += `\n</input_audios>`
     }
 
     // Fetch images as base64
@@ -513,6 +529,45 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
                   onClick={() =>
                     setVideos((prev) =>
                       prev.filter((v) => v.file_id !== video.file_id)
+                    )
+                  }
+                >
+                  <XIcon className="size-3" />
+                </Button>
+              </motion.div>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {audios.length > 0 && (
+          <motion.div
+            className="flex items-center gap-2 w-full"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
+          >
+            {audios.map((audio) => (
+              <motion.div
+                key={audio.file_id}
+                className="relative size-10"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ duration: 0.2, ease: 'easeInOut' }}
+              >
+                <div className="w-full h-full bg-muted rounded-md flex items-center justify-center">
+                  <Music className="size-5 text-muted-foreground" />
+                </div>
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  className="absolute -top-1 -right-1 size-4"
+                  onClick={() =>
+                    setAudios((prev) =>
+                      prev.filter((a) => a.file_id !== audio.file_id)
                     )
                   }
                 >
