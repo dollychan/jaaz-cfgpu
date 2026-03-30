@@ -104,6 +104,12 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
         camera_fixed: bool = True,
         **kwargs: Any
     ) -> str:
+        # cfgpu API constraint: reference_audio cannot be the only reference input
+        if input_audios and not input_images and not input_videos:
+            raise ValueError(
+                "Audio reference requires at least one image or video reference. "
+                "Please provide input_images or input_videos alongside input_audios."
+            )
         try:
             api_url = f"{self.base_url}/video/generations"
             headers = self._build_headers()

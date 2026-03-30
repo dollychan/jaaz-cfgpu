@@ -27,7 +27,7 @@ class GenerateByCfgpuSeedance2_0InputSchema(BaseModel):
     )
     input_audios: Optional[List[str]] = Field(
         default=None,
-        description="Optional. List of reference audio URLs or file IDs to use as background music. When provided, the generated video will include the audio."
+        description="Optional. List of reference audio URLs or file IDs to use as background music. MUST be used together with input_images or input_videos — audio cannot be the only reference input."
     )
     tool_call_id: Annotated[str, InjectedToolCallId]
 
