@@ -23,6 +23,7 @@ from ..video_generation_utils import get_image_base64
 from utils.http_client import HttpClient
 
 _VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v', '.3gp'}
+_AUDIO_EXTENSIONS = {'.mp3', '.wav', '.aac', '.m4a', '.ogg', '.flac', '.opus'}
 
 # Public base URL of this jaaz server, used so external APIs can fetch local video files.
 # Set JAAZ_SERVER_URL env var to the publicly accessible address, e.g. http://1.2.3.4:57988
@@ -75,6 +76,26 @@ def _resolve_video_url(ref: str) -> str:
     return ref
 
 
+def _resolve_audio_url(ref: str) -> str:
+    """
+    Convert a local audio file_id/filename to a server-hosted URL.
+    External APIs require a real web URL for audio (same rule as video).
+    Falls back to ref unchanged if the file is not found locally.
+    """
+    if ref.startswith(('http://', 'https://', 'data:')):
+        return ref
+    ref_stem = os.path.splitext(ref)[0]
+    for fname in os.listdir(FILES_DIR):
+        if fname == ref or os.path.splitext(fname)[0] == ref_stem:
+            ext = os.path.splitext(fname)[1].lower()
+            if ext in _AUDIO_EXTENSIONS:
+                server_url = f"{_SERVER_BASE_URL}/api/file/{fname}"
+                print(f"🎵 Resolved local audio '{ref}' → {server_url}")
+                return server_url
+    print(f"⚠️ Audio file not found locally for ref '{ref}', passing as-is")
+    return ref
+
+
 async def generate_video_with_provider(
     prompt: str,
     resolution: str,
@@ -85,6 +106,7 @@ async def generate_video_with_provider(
     config: Any,
     input_images: Optional[list[str]] = None,
     input_videos: Optional[list[str]] = None,
+    input_audios: Optional[list[str]] = None,
     camera_fixed: bool = True,
     **kwargs: Any
 ) -> str:
@@ -142,9 +164,11 @@ async def generate_video_with_provider(
             f"Starting video generation using {model_name} via {provider_name}..."
         )
 
-        # Images → base64 data URL (download remote URLs if needed); Videos → server-hosted web URL
+        # Images → base64 data URL (download remote URLs if needed)
+        # Videos / Audios → server-hosted web URL (external APIs require real URLs)
         processed_input_images = list(await asyncio.gather(*[_resolve_image_url(r) for r in input_images])) if input_images else None
         processed_input_videos = [_resolve_video_url(r) for r in input_videos] if input_videos else None
+        processed_input_audios = [_resolve_audio_url(r) for r in input_audios] if input_audios else None
 
         # Generate video using the selected provider
         video_url = await provider_instance.generate(
@@ -155,6 +179,7 @@ async def generate_video_with_provider(
             aspect_ratio=aspect_ratio,
             input_images=processed_input_images,
             input_videos=processed_input_videos,
+            input_audios=processed_input_audios,
             camera_fixed=camera_fixed,
             **kwargs
         )

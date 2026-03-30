@@ -39,6 +39,7 @@ class VideoProviderBase(ABC):
         aspect_ratio: str = "16:9",
         input_images: Optional[list[str]] = None,
         input_videos: Optional[list[str]] = None,
+        input_audios: Optional[list[str]] = None,
         camera_fixed: bool = True,
         **kwargs: Any
     ) -> str:
@@ -53,6 +54,7 @@ class VideoProviderBase(ABC):
             aspect_ratio: Video aspect ratio (1:1, 16:9, 4:3, 21:9)
             input_images: Optional input images for i2v reference
             input_videos: Optional input videos for v2v reference
+            input_audios: Optional input audio files as background music / reference audio
             camera_fixed: Whether to keep camera fixed
             **kwargs: Additional provider-specific parameters
 

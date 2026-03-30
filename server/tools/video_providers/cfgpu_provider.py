@@ -34,6 +34,7 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
         duration: int = 5,
         input_image_data: Optional[List[str]] = None,
         input_video_data: Optional[List[str]] = None,
+        input_audio_data: Optional[List[str]] = None,
         **kwargs: Any
     ) -> Dict[str, Any]:
         content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
@@ -46,9 +47,14 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
             for vid_url in input_video_data:
                 content.append({"type": "video_url", "video_url": {"url": vid_url}, "role": "reference_video"})
 
+        if input_audio_data:
+            for aud_url in input_audio_data:
+                content.append({"type": "audio_url", "audio_url": {"url": aud_url}, "role": "reference_audio"})
+
         return {
             "model": model,
             "content": content,
+            "generate_audio": bool(input_audio_data),
             "ratio": aspect_ratio,
             "duration": duration,
             "watermark": False,
@@ -94,6 +100,7 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
         aspect_ratio: str = "16:9",
         input_images: Optional[List[str]] = None,
         input_videos: Optional[List[str]] = None,
+        input_audios: Optional[List[str]] = None,
         camera_fixed: bool = True,
         **kwargs: Any
     ) -> str:
@@ -107,6 +114,7 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
                 duration=duration,
                 input_image_data=input_images,
                 input_video_data=input_videos,
+                input_audio_data=input_audios,
                 **kwargs
             )
 
