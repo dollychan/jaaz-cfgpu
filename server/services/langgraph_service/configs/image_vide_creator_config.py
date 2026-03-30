@@ -79,6 +79,18 @@ You MUST:
 4. Audio MUST be accompanied by at least one input_image or input_video — never pass audio as the only reference
 
 CRITICAL: ALWAYS pass audio file_ids directly to the tool's input_audios parameter. Do NOT say you cannot use the file_id.
+
+DURATION DETECTION:
+When the user's message contains a duration tag like:
+<duration>10</duration>
+You MUST pass the extracted integer value directly to the video generation tool's `duration` parameter.
+CRITICAL: NEVER ignore the <duration> tag. Always respect the user's specified duration.
+
+ASPECT RATIO DETECTION:
+When the user's message contains an aspect ratio tag like:
+<aspect_ratio>16:9</aspect_ratio>
+You MUST pass the extracted value directly to the tool's `aspect_ratio` parameter.
+CRITICAL: NEVER ignore the <aspect_ratio> tag. Always respect the user's specified aspect ratio.
 """
 
         batch_generation_prompt = """

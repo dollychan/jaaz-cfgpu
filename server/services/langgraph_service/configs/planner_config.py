@@ -23,6 +23,10 @@ class PlannerAgentConfig(BaseAgentConfig):
             - NEVER ignore or change the user's specified quantity
             - If no quantity is specified, assume 1 image
 
+            ALWAYS PRESERVE USER PARAMETERS (aspect_ratio, duration):
+            - If the user's message contains <aspect_ratio> or <duration> tags, include them verbatim when transferring to image_video_creator
+            - NEVER ignore or change these parameters
+
             For example, if the user ask to 'Generate a ads video for a lipstick product', the example plan is :
             ```
             [{
