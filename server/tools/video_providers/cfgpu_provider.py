@@ -60,15 +60,29 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
             "watermark": False,
         }
 
-    async def _poll_task_status(self, task_id: str, model: str, headers: Dict[str, str]) -> str:
-        """Poll task status until completion"""
+    async def _poll_task_status(
+        self,
+        task_id: str,
+        model: str,
+        headers: Dict[str, str],
+        timeout_seconds: int = 1800,  # 30 minutes
+        poll_interval: int = 5,
+    ) -> str:
+        """Poll task status until completion or timeout."""
         polling_url = f"{self.base_url}/video/tasks/{model}/{task_id}"
         status = "pending"
+        max_polls = timeout_seconds // poll_interval
+        poll_count = 0
 
         async with HttpClient.create_aiohttp() as session:
             while status not in ("succeeded", "failed", "cancelled"):
-                print(f"🎥 Polling CFGPU generation {task_id}, current status: {status} ...")
-                await asyncio.sleep(5)
+                if poll_count >= max_polls:
+                    raise Exception(
+                        f"CFGPU task {task_id} timed out after {timeout_seconds}s"
+                    )
+                print(f"🎥 Polling CFGPU generation {task_id} ({poll_count}/{max_polls}), status: {status} ...")
+                await asyncio.sleep(poll_interval)
+                poll_count += 1
 
                 async with session.get(polling_url, headers=headers) as poll_response:
                     poll_res = await poll_response.json()
@@ -89,7 +103,7 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
                         detail = poll_res.get("message", f"Task failed with status: {status}")
                         raise Exception(f"CFGPU video generation failed: {detail}")
 
-        raise Exception(f"Task polling failed with final status: {status}")
+        raise Exception(f"Task polling finished with unexpected status: {status}")
 
     async def generate(
         self,

@@ -58,29 +58,19 @@ async def _resolve_image_url(ref: str) -> str:
     return ref
 
 
-def _resolve_video_url(ref: str) -> str:
+def _resolve_local_to_server_url(
+    ref: str,
+    allowed_extensions: Optional[set] = None,
+    label: str = "media",
+) -> str:
     """
-    Convert a local video file_id/filename to a server-hosted URL.
-    External video APIs (e.g. cfgpu) require a real web URL, not base64.
-    Falls back to ref unchanged if the file is not found locally.
-    """
-    if ref.startswith(('http://', 'https://', 'data:')):
-        return ref
-    ref_stem = os.path.splitext(ref)[0]
-    for fname in os.listdir(FILES_DIR):
-        if fname == ref or os.path.splitext(fname)[0] == ref_stem:
-            server_url = f"{_SERVER_BASE_URL}/api/file/{fname}"
-            print(f"🎥 Resolved local video '{ref}' → {server_url}")
-            return server_url
-    print(f"⚠️ Video file not found locally for ref '{ref}', passing as-is")
-    return ref
+    Convert a local file_id/filename to a server-hosted URL.
 
-
-def _resolve_audio_url(ref: str) -> str:
-    """
-    Convert a local audio file_id/filename to a server-hosted URL.
-    External APIs require a real web URL for audio (same rule as video).
-    Falls back to ref unchanged if the file is not found locally.
+    External APIs (cfgpu, etc.) require real web URLs for video/audio.
+    - http/https/data: URLs are returned unchanged.
+    - Local refs are matched by exact filename or stem, then filtered by
+      allowed_extensions when provided (None = accept any extension).
+    - Falls back to the original ref with a warning if not found.
     """
     if ref.startswith(('http://', 'https://', 'data:')):
         return ref
@@ -88,12 +78,20 @@ def _resolve_audio_url(ref: str) -> str:
     for fname in os.listdir(FILES_DIR):
         if fname == ref or os.path.splitext(fname)[0] == ref_stem:
             ext = os.path.splitext(fname)[1].lower()
-            if ext in _AUDIO_EXTENSIONS:
+            if allowed_extensions is None or ext in allowed_extensions:
                 server_url = f"{_SERVER_BASE_URL}/api/file/{fname}"
-                print(f"🎵 Resolved local audio '{ref}' → {server_url}")
+                print(f"🔗 Resolved local {label} '{ref}' → {server_url}")
                 return server_url
-    print(f"⚠️ Audio file not found locally for ref '{ref}', passing as-is")
+    print(f"⚠️ Local {label} '{ref}' not found, passing as-is")
     return ref
+
+
+def _resolve_video_url(ref: str) -> str:
+    return _resolve_local_to_server_url(ref, label="video")
+
+
+def _resolve_audio_url(ref: str) -> str:
+    return _resolve_local_to_server_url(ref, _AUDIO_EXTENSIONS, label="audio")
 
 
 async def generate_video_with_provider(

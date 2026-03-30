@@ -19,13 +19,21 @@ os.makedirs(FILES_DIR, exist_ok=True)
 
 
 @router.post("/upload_video")
-async def upload_video(file: UploadFile = File(...)):
-    print('🎥 upload_video file', file.filename)
+async def upload_video(file: UploadFile = File(...), max_size_mb: float = 200.0):
+    print('🎥 upload_video file', file.filename, 'content_type', file.content_type)
+    content_type = file.content_type or ''
+    if not content_type.startswith('video/'):
+        raise HTTPException(status_code=400, detail=f"Invalid content type '{content_type}'. Expected video/*.")
+
+    content = await file.read()
+    size_mb = len(content) / (1024 * 1024)
+    if size_mb > max_size_mb:
+        raise HTTPException(status_code=413, detail=f"File too large ({size_mb:.1f} MB > {max_size_mb} MB limit).")
+
     file_id = generate_video_file_id()
     filename = file.filename or 'video.mp4'
 
     # Determine extension from mime type or filename
-    content_type = file.content_type or ''
     if 'mp4' in content_type or filename.endswith('.mp4'):
         extension = 'mp4'
     elif 'mov' in content_type or filename.endswith('.mov'):
@@ -36,11 +44,10 @@ async def upload_video(file: UploadFile = File(...)):
         extension = 'mp4'
 
     file_path = os.path.join(FILES_DIR, f'{file_id}.{extension}')
-    content = await file.read()
     async with aiofiles.open(file_path, 'wb') as f:
         await f.write(content)
 
-    print('🎥 upload_video saved to', file_path)
+    print(f'🎥 upload_video saved to {file_path} ({size_mb:.1f} MB)')
     return {
         'file_id': f'{file_id}.{extension}',
         'url': f'/api/file/{file_id}.{extension}',
