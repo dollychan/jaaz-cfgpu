@@ -80,11 +80,22 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     }
   }, [sessionList, searchSessionId])
 
-  const [messages, setMessages] = useState<Message[]>([])
+  type MessageWithUid = Message & { __uid?: string }
+  const [messages, setMessages] = useState<MessageWithUid[]>([])
   const [pending, setPending] = useState<PendingType>(
     initCanvas ? 'text' : false
   )
   const mergedToolCallIds = useRef<string[]>([])
+
+  const ensureMessageUid = (message: MessageWithUid): MessageWithUid => {
+    if (!message.__uid) {
+      message.__uid = nanoid()
+    }
+    return message
+  }
+
+  const ensureMessagesUids = (messages: MessageWithUid[]): MessageWithUid[] =>
+    messages.map((message) => ensureMessageUid(message))
 
   const sessionId = session?.id ?? searchSessionId
 
@@ -109,7 +120,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     }, 200)
   }, [])
 
-  const mergeToolCallResult = (messages: Message[]) => {
+  const mergeToolCallResult = (messages: MessageWithUid[]) => {
     const messagesWithToolCallResult = messages.map((message, index) => {
       if (message.role === 'assistant' && message.tool_calls) {
         for (const toolCall of message.tool_calls) {
@@ -126,7 +137,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
           }
         }
       }
-      return message
+      return ensureMessageUid(message)
     })
 
     return messagesWithToolCallResult
@@ -154,13 +165,15 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
               last.content.at(-1) &&
               last.content.at(-1)!.type === 'text'
             ) {
-              ;(last.content.at(-1) as { text: string }).text += data.text
+              ; (last.content.at(-1) as { text: string }).text += data.text
             }
           } else {
-            prev.push({
-              role: 'assistant',
-              content: data.text,
-            })
+            prev.push(
+              ensureMessageUid({
+                role: 'assistant',
+                content: data.text,
+              })
+            )
           }
         })
       )
@@ -190,20 +203,22 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         produce((prev) => {
           console.log('👇tool_call event get', data)
           setPending('tool')
-          prev.push({
-            role: 'assistant',
-            content: '',
-            tool_calls: [
-              {
-                type: 'function',
-                function: {
-                  name: data.name,
-                  arguments: '',
+          prev.push(
+            ensureMessageUid({
+              role: 'assistant',
+              content: '',
+              tool_calls: [
+                {
+                  type: 'function',
+                  function: {
+                    name: data.name,
+                    arguments: '',
+                  },
+                  id: data.id,
                 },
-                id: data.id,
-              },
-            ],
-          })
+              ],
+            })
+          )
         })
       )
 
@@ -237,20 +252,22 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         produce((prev) => {
           console.log('👇tool_call_pending_confirmation event get', data)
           setPending('tool')
-          prev.push({
-            role: 'assistant',
-            content: '',
-            tool_calls: [
-              {
-                type: 'function',
-                function: {
-                  name: data.name,
-                  arguments: data.arguments,
+          prev.push(
+            ensureMessageUid({
+              role: 'assistant',
+              content: '',
+              tool_calls: [
+                {
+                  type: 'function',
+                  function: {
+                    name: data.name,
+                    arguments: data.arguments,
+                  },
+                  id: data.id,
                 },
-                id: data.id,
-              },
-            ],
-          })
+              ],
+            })
+          )
         })
       )
 
@@ -584,7 +601,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const onSendMessages = useCallback(
     (data: Message[], configs: { textModel: Model; toolList: ToolInfo[] }) => {
       setPending('text')
-      setMessages(data)
+      setMessages(ensureMessagesUids(data))
 
       sendMessages({
         sessionId: sessionId!,
@@ -648,7 +665,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             <div className='flex flex-col flex-1 px-4 pb-50 pt-15'>
               {/* Messages */}
               {messages.map((message, idx) => (
-                <div key={`${idx}`} className='flex flex-col gap-4 mb-2'>
+                <div key={message.__uid ?? `message-${idx}`} className='flex flex-col gap-4 mb-2'>
                   {/* Regular message content */}
                   {typeof message.content == 'string' &&
                     (message.role !== 'tool' ? (
