@@ -198,3 +198,24 @@ export const getMyAssetsDirPath = async () => {
 
 // PNG metadata 现在通过前端直接读取 (readPNGMetadata in @/utils/pngMetadata)
 // 这样更快，避免了后端处理的开销
+
+// 素材资产库 API
+export const uploadMaterialApi = async (file: File) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  const response = await fetch('/api/material/upload', {
+    method: 'POST',
+    body: formData,
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ detail: response.statusText }))
+    throw new Error(err.detail || 'Upload failed')
+  }
+  return response.json()
+}
+
+export const getMaterialFilesApi = async () => {
+  const response = await fetch('/api/material/files')
+  if (!response.ok) throw new Error('Failed to list material files')
+  return response.json()
+}

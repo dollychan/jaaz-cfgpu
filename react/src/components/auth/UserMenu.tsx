@@ -71,10 +71,6 @@ export function UserMenu() {
     )
   }
 
-  // 未登录状态，显示登录按钮
-  return (
-    <Button variant="outline" onClick={() => setShowLoginDialog(true)}>
-      {t('common:auth.login')}
-    </Button>
-  )
+  // 未登录状态，隐藏登录按钮
+  return null
 }

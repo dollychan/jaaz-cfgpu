@@ -77,6 +77,7 @@ USER_DATA_DIR = os.getenv(
     os.path.join(SERVER_DIR, "user_data"),
 )
 FILES_DIR = os.path.join(USER_DATA_DIR, "files")
+MATERIALS_DIR = os.path.join(USER_DATA_DIR, "materials")
 
 
 IMAGE_FORMATS = (

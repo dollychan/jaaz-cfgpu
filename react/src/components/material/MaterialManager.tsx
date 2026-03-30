@@ -21,6 +21,8 @@ import {
   Info,
   X,
   MessageCirclePlus,
+  Upload,
+  Library,
 } from 'lucide-react'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
@@ -29,6 +31,8 @@ import {
   getFileServiceUrl,
   openFolderInExplorer,
   getMyAssetsDirPath,
+  uploadMaterialApi,
+  getMaterialFilesApi,
 } from '@/api/settings'
 import { readPNGMetadata } from '@/utils/pngMetadata'
 import FilePreviewModal from './FilePreviewModal'
@@ -230,6 +234,13 @@ export default function MaterialManager() {
     fileType: '',
   })
   const myAssetsPath = useRef<string>('')
+  const [activeTab, setActiveTab] = useState<'myAssets' | 'materialLibrary'>('myAssets')
+  const [materialFiles, setMaterialFiles] = useState<Array<{
+    name: string; path: string; size: number; mtime: number; type: string; url: string
+  }>>([])
+  const [materialLoading, setMaterialLoading] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const uploadInputRef = useRef<HTMLInputElement>(null)
   const { t } = useTranslation()
 
   // 初始化时加载用户目录
@@ -438,6 +449,43 @@ export default function MaterialManager() {
       console.error('Failed to load My Assets folder:', error)
     }
   }, [handleFolderClick])
+
+  const loadMaterialFiles = useCallback(async () => {
+    setMaterialLoading(true)
+    try {
+      const files = await getMaterialFilesApi()
+      setMaterialFiles(files)
+    } catch (err) {
+      console.error('Failed to load material files:', err)
+    } finally {
+      setMaterialLoading(false)
+    }
+  }, [])
+
+  const handleMaterialLibraryTab = useCallback(() => {
+    setActiveTab('materialLibrary')
+    loadMaterialFiles()
+  }, [loadMaterialFiles])
+
+  const handleUploadClick = useCallback(() => {
+    uploadInputRef.current?.click()
+  }, [])
+
+  const handleUploadChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    if (!files.length) return
+    setUploading(true)
+    try {
+      await Promise.all(files.map((f) => uploadMaterialApi(f)))
+      await loadMaterialFiles()
+      toast.success(`上传成功`)
+    } catch (err: any) {
+      toast.error(err.message || '上传失败')
+    } finally {
+      setUploading(false)
+      if (uploadInputRef.current) uploadInputRef.current.value = ''
+    }
+  }, [loadMaterialFiles])
 
   const getFileIcon = useCallback(
     (type: string, className: string = 'w-4 h-4') => {
@@ -908,71 +956,24 @@ export default function MaterialManager() {
   return (
     <div className="flex h-full bg-gray-50 dark:bg-gray-900 w-full overflow-hidden">
       {/* Left Sidebar */}
-      <div className="w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col flex-shrink-0">
-        {/* Header */}
-        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-          {/* My Assets Button */}
+      <div className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col flex-shrink-0">
+        <div className="p-4 flex flex-col gap-2">
           <Button
-            variant={
-              selectedFolder?.path === myAssetsPath.current
-                ? 'default'
-                : 'ghost'
-            }
-            onClick={handleMyAssets}
-            className="w-full justify-start text-left mb-3"
-            style={{ padding: '4px', margin: '0px' }}
+            variant={activeTab === 'myAssets' ? 'default' : 'ghost'}
+            onClick={() => { setActiveTab('myAssets'); handleMyAssets() }}
+            className="w-full justify-start"
           >
-            <Star className="w-4 h-4" />
-            <span>{t('canvas:myAssets', 'My Assets')}</span>
+            <Star className="w-4 h-4 mr-2" />
+            {t('canvas:myAssets', 'My Assets')}
           </Button>
-          {/* Navigation */}
-          <div className="flex items-center gap-2 mb-3 px-[4px]">
-            <button className="rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-              <FolderOpen className="w-4 h-4" />
-            </button>
-            <div className="flex-1 text-sm text-gray-600 dark:text-gray-400 truncate">
-              {currentPath || '~'}
-            </div>
-            <button
-              onClick={() => loadFolder(currentPath)}
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-            >
-              <RefreshCw
-                className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`}
-              />
-            </button>
-          </div>
-
-          {/* Search */}
-          {/* <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input
-              type="text"
-              placeholder="搜索文件..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div> */}
-        </div>
-
-        {/* File Tree */}
-        <div className="flex-1 overflow-y-auto p-2">
-          {loading && (
-            <div className="flex items-center justify-center py-8">
-              <RefreshCw className="w-6 h-6 animate-spin text-blue-600" />
-            </div>
-          )}
-
-          {error && (
-            <div className="p-4 bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-800 rounded-lg">
-              <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>
-            </div>
-          )}
-
-          {!loading && !error && (
-            <div className="space-y-1">{renderFileTree(filteredItems)}</div>
-          )}
+          <Button
+            variant={activeTab === 'materialLibrary' ? 'default' : 'ghost'}
+            onClick={handleMaterialLibraryTab}
+            className="w-full justify-start"
+          >
+            <Library className="w-4 h-4 mr-2" />
+            素材资产库
+          </Button>
         </div>
       </div>
 
@@ -987,61 +988,121 @@ export default function MaterialManager() {
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {selectedFolder
-                    ? selectedFolder.name
-                    : t('canvas:selectAFolder', 'Select a folder')}
+                  {activeTab === 'materialLibrary'
+                    ? '素材资产库'
+                    : selectedFolder
+                      ? selectedFolder.name
+                      : t('canvas:selectAFolder', 'Select a folder')}
                 </h2>
-                {selectedFolder && (
+                {activeTab === 'myAssets' && selectedFolder && (
                   <button
                     onClick={handleOpenInExplorer}
                     className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                    title={t(
-                      'canvas:openInExplorer',
-                      'Open in system file browser'
-                    )}
+                    title={t('canvas:openInExplorer', 'Open in system file browser')}
                   >
                     <ExternalLink className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                   </button>
                 )}
               </div>
-              {selectedFolder && (
-                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                  {filteredMediaFiles.length}{' '}
-                  {t('canvas:mediaFiles', 'media files')}
-                </p>
-              )}
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                {activeTab === 'materialLibrary'
+                  ? `${materialFiles.length} 个素材`
+                  : selectedFolder
+                    ? `${filteredMediaFiles.length} ${t('canvas:mediaFiles', 'media files')}`
+                    : null}
+              </p>
             </div>
 
-            {selectedFolder && (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setViewMode('grid')}
-                  className={`p-2 rounded-lg transition-colors ${
-                    viewMode === 'grid'
-                      ? 'bg-blue-100 dark:bg-blue-900 text-blue-600'
-                      : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  <Grid className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setViewMode('list')}
-                  className={`p-2 rounded-lg transition-colors ${
-                    viewMode === 'list'
-                      ? 'bg-blue-100 dark:bg-blue-900 text-blue-600'
-                      : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  <List className="w-4 h-4" />
-                </button>
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              {activeTab === 'materialLibrary' && (
+                <>
+                  <input
+                    ref={uploadInputRef}
+                    type="file"
+                    accept="image/*,video/*"
+                    multiple
+                    className="hidden"
+                    onChange={handleUploadChange}
+                  />
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={handleUploadClick}
+                    disabled={uploading}
+                  >
+                    <Upload className="w-4 h-4 mr-1" />
+                    {uploading ? '上传中...' : '上传素材'}
+                  </Button>
+                </>
+              )}
+              {activeTab === 'myAssets' && selectedFolder && (
+                <>
+                  <button
+                    onClick={() => setViewMode('grid')}
+                    className={`p-2 rounded-lg transition-colors ${viewMode === 'grid' ? 'bg-blue-100 dark:bg-blue-900 text-blue-600' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                  >
+                    <Grid className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setViewMode('list')}
+                    className={`p-2 rounded-lg transition-colors ${viewMode === 'list' ? 'bg-blue-100 dark:bg-blue-900 text-blue-600' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                  >
+                    <List className="w-4 h-4" />
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 w-full min-w-0">
-          {selectedFolder ? (
+          {activeTab === 'materialLibrary' ? (
+            <div className="w-full">
+              {materialLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <RefreshCw className="w-6 h-6 animate-spin text-blue-600" />
+                </div>
+              ) : materialFiles.length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                  {materialFiles.map((file) => (
+                    <div
+                      key={file.path}
+                      className="group relative bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border border-gray-200 dark:border-gray-700 cursor-pointer"
+                      onClick={() => setPreviewModal({ isOpen: true, filePath: file.path, fileName: file.name, fileType: file.type })}
+                    >
+                      <div className="aspect-square bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 flex items-center justify-center overflow-hidden">
+                        {file.type === 'image' ? (
+                          <img
+                            src={file.url}
+                            alt={file.name}
+                            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          />
+                        ) : (
+                          <div className="flex flex-col items-center justify-center text-gray-400">
+                            <Play className="w-8 h-8 text-red-500" />
+                            <span className="text-xs mt-1">VIDEO</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="p-3">
+                        <div className="text-sm font-medium truncate" title={file.name}>{file.name}</div>
+                        <div className="text-xs text-gray-500 mt-1">{formatFileSize(file.size)}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-64 text-gray-500">
+                  <div className="text-center">
+                    <Library className="w-16 h-16 mx-auto mb-4 opacity-30" />
+                    <p className="text-lg font-medium">素材库为空</p>
+                    <p className="text-sm mt-2">点击右上角"上传素材"添加图片或视频</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : selectedFolder ? (
             <div className="w-full overflow-hidden">
               {filteredMediaFiles.length > 0 ? (
                 <div>
