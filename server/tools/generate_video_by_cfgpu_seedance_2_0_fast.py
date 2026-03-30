@@ -25,10 +25,11 @@ class GenerateByCfgpuSeedance2_0FastInputSchema(BaseModel):
         default="auto",
         description=(
             "Optional. How input images are used. Ignored when input_images is not set. "
-            "'auto' (default): infer from count — 1 image → first_frame, 2 images → first_last_frame, 3–9 images → reference_image. "
-            "'first_frame': use the single image as the video's starting frame (image-to-video). "
-            "'first_last_frame': use exactly 2 images as starting and ending frames. "
-            "'reference_image': use 1–9 images as style/content references (multimodal reference-to-video)."
+            "'auto' (default): infer from count — 1 image → first_frame, 2 images → first_last_frame, 3–9 images → reference_image; "
+            "automatically switches to reference_image when input_videos or input_audios are also provided. "
+            "'first_frame': use the single image as the video's starting frame (image-to-video, no input_videos/input_audios allowed). "
+            "'first_last_frame': use exactly 2 images as starting and ending frames (no input_videos/input_audios allowed). "
+            "'reference_image': use 1–9 images as style/content references; compatible with input_videos and input_audios (multimodal reference-to-video)."
         )
     )
     input_videos: Optional[List[str]] = Field(

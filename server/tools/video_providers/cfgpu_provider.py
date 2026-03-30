@@ -51,14 +51,26 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
 
         if input_image_data:
             n = len(input_image_data)
-            # Resolve effective role
+            # first_frame / first_last_frame are mutually exclusive with reference_video
+            # and reference_audio — they cannot appear in the same request.
+            # When other media is present we must use reference_image (multimodal mode).
+            has_other_media = bool(input_video_data or input_audio_data)
+
             if image_role == "auto":
-                if n == 1:
-                    effective_role = "first_frame"
-                elif n == 2:
-                    effective_role = "first_last_frame"
-                else:
+                if has_other_media or n >= 3:
                     effective_role = "reference_image"
+                elif n == 1:
+                    effective_role = "first_frame"
+                else:  # n == 2
+                    effective_role = "first_last_frame"
+            elif image_role in ("first_frame", "first_last_frame") and has_other_media:
+                # Caller explicitly chose a frame role but also supplied other media —
+                # override to reference_image to avoid an API InvalidParameter error.
+                print(
+                    f"⚠️ image_role='{image_role}' is incompatible with reference_video/"
+                    "reference_audio; overriding to 'reference_image'"
+                )
+                effective_role = "reference_image"
             else:
                 effective_role = image_role
 
