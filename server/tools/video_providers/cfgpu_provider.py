@@ -147,8 +147,13 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
                 async with session.get(polling_url, headers=headers) as poll_response:
                     poll_res = await poll_response.json()
                     status = poll_res.get("status", "pending")
+                    if poll_count == 1:
+                        # 🔍 LOG: print first poll response to inspect API-echoed fields
+                        print(f"🔍 CFGPU first poll response (full): {poll_res}")
 
                     if status == "succeeded":
+                        # 🔍 LOG: full succeeded response to confirm field names
+                        print(f"🔍 CFGPU succeeded response (full): {poll_res}")
                         content = poll_res.get("content") or {}
                         video_url = (
                             content.get("videoUrl")
@@ -225,6 +230,8 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
                     debug_content.append(item_copy)
                 payload_meta = {k: v for k, v in payload.items() if k != "content"}
                 print(f"🎥 Starting CFGPU video generation (attempt {attempt}/{max_retries}), model: {model}, payload_fields: {payload_meta}, content: {debug_content}")
+                # 🔍 LOG: confirm exact field names sent to API
+                print(f"🔍 CFGPU request payload keys & values (non-content): ratio={payload.get('ratio')!r}, duration={payload.get('duration')!r}, generate_audio={payload.get('generate_audio')!r}, watermark={payload.get('watermark')!r}")
 
                 async with HttpClient.create_aiohttp() as session:
                     async with session.post(api_url, headers=headers, json=payload) as response:
