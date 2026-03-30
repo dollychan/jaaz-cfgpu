@@ -1,3 +1,4 @@
+import json
 import os
 import uuid
 import mimetypes
@@ -39,6 +40,54 @@ def _file_type(name: str) -> str:
 
 def _get_ml_config():
     return config_service.app_config.get("material_library", {})
+
+
+# ---------- Status cache helpers ----------
+
+def _status_cache_path() -> str:
+    return os.path.join(MATERIALS_DIR, ".material_status.json")
+
+
+def _load_status_cache() -> dict:
+    path = _status_cache_path()
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+def _save_status_cache(cache: dict) -> None:
+    _ensure_dir()
+    path = _status_cache_path()
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False, indent=2)
+
+
+async def _get_asset(asset_id: str) -> dict:
+    """Call volcengine GetAsset API and return the result dict."""
+    cfg = _get_ml_config()
+    ak = cfg.get("ak", "")
+    sk = cfg.get("sk", "")
+    project_name = cfg.get("project_name", "default") or "default"
+
+    if not ak or not sk:
+        raise ValueError("material_library AK/SK are not configured")
+
+    payload: dict = {"Id": asset_id}
+    if project_name and project_name != "default":
+        payload["ProjectName"] = project_name
+
+    result = await volcengine_post(
+        ak=ak, sk=sk,
+        service="ark",
+        action="GetAsset",
+        version="2024-01-01",
+        body=payload,
+    )
+    return result
 
 
 async def _create_asset(public_url: str, asset_type: str, name: str) -> str:
@@ -132,16 +181,19 @@ async def upload_material(file: UploadFile = File(...)):
 @router.get("/files")
 async def list_materials():
     _ensure_dir()
+    cache = _load_status_cache()
     results = []
     for name in sorted(os.listdir(MATERIALS_DIR)):
+        if name.startswith("."):   # skip hidden files (.material_status.json etc.)
+            continue
         full = os.path.join(MATERIALS_DIR, name)
         if not os.path.isfile(full):
             continue
         stat = os.stat(full)
         ftype = _file_type(name)
-        # Asset ID is the stem if it looks like an asset ID (starts with "asset-")
         stem = os.path.splitext(name)[0]
         asset_id = stem if stem.startswith("asset-") else None
+        status = cache.get(asset_id) if asset_id else None
         results.append({
             "name": name,
             "asset_id": asset_id,
@@ -151,9 +203,53 @@ async def list_materials():
             "mtime": stat.st_mtime,
             "type": ftype,
             "url": f"/api/material/serve/{name}",
+            "status": status,
         })
     results.sort(key=lambda x: x["mtime"], reverse=True)
     return results
+
+
+@router.post("/poll-status")
+async def poll_material_statuses():
+    """Query GetAsset for every Processing (or unknown) asset and update the local cache.
+
+    Returns:
+        statuses: full {asset_id: status} cache
+        updated:  only the asset_ids whose status changed in this call
+    """
+    _ensure_dir()
+    cache = _load_status_cache()
+
+    # Collect all asset IDs present as local files
+    asset_ids = []
+    for name in os.listdir(MATERIALS_DIR):
+        if name.startswith("."):
+            continue
+        stem = os.path.splitext(name)[0]
+        if stem.startswith("asset-"):
+            asset_ids.append(stem)
+
+    # Only poll assets whose status is still mutable (Processing or unknown)
+    to_poll = [aid for aid in asset_ids if cache.get(aid) not in ("Active", "Failed")]
+
+    updated: dict = {}
+    cfg = _get_ml_config()
+    if cfg.get("ak") and cfg.get("sk") and to_poll:
+        for asset_id in to_poll:
+            try:
+                result = await _get_asset(asset_id)
+                data = result.get("Result") or result
+                status = data.get("Status")
+                if status:
+                    cache[asset_id] = status
+                    updated[asset_id] = status
+            except Exception as e:
+                print(f"⚠️ GetAsset failed for {asset_id}: {e}")
+
+        if updated:
+            _save_status_cache(cache)
+
+    return {"statuses": cache, "updated": updated}
 
 
 @router.get("/serve/{filename}")

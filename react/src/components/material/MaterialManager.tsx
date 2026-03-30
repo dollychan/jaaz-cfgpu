@@ -33,6 +33,7 @@ import {
   getMyAssetsDirPath,
   uploadMaterialApi,
   getMaterialFilesApi,
+  pollMaterialStatusesApi,
 } from '@/api/settings'
 import { readPNGMetadata } from '@/utils/pngMetadata'
 import FilePreviewModal from './FilePreviewModal'
@@ -95,6 +96,25 @@ const VideoThumbnail = memo(({ src, className }: { src: string; className?: stri
   )
 })
 VideoThumbnail.displayName = 'VideoThumbnail'
+
+// Status badge for volcengine material library assets
+const STATUS_STYLES: Record<string, string> = {
+  Processing: 'bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/40 dark:text-yellow-300 dark:border-yellow-700',
+  Active:     'bg-green-100 text-green-800 border-green-300 dark:bg-green-900/40 dark:text-green-300 dark:border-green-700',
+  Failed:     'bg-red-100 text-red-800 border-red-300 dark:bg-red-900/40 dark:text-red-300 dark:border-red-700',
+}
+const StatusBadge = memo(({ status }: { status?: string | null }) => {
+  if (!status) return null
+  return (
+    <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded border ${STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-600 border-gray-300'}`}>
+      {status === 'Processing' && (
+        <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+      )}
+      {status}
+    </span>
+  )
+})
+StatusBadge.displayName = 'StatusBadge'
 
 interface FileSystemItem {
   name: string
@@ -293,6 +313,7 @@ export default function MaterialManager() {
   const [materialFiles, setMaterialFiles] = useState<Array<{
     name: string; asset_id: string | null; display_name: string;
     path: string; size: number; mtime: number; type: string; url: string
+    status?: string | null   // 'Processing' | 'Active' | 'Failed' | null
   }>>([])
   const [materialLoading, setMaterialLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -518,10 +539,28 @@ export default function MaterialManager() {
     }
   }, [])
 
-  const handleMaterialLibraryTab = useCallback(() => {
+  /** Poll Processing assets and merge updated statuses into materialFiles state. */
+  const pollAndMergeStatuses = useCallback(async () => {
+    try {
+      const { statuses } = await pollMaterialStatusesApi()
+      setMaterialFiles((prev) =>
+        prev.map((f) =>
+          f.asset_id && statuses[f.asset_id] !== undefined
+            ? { ...f, status: statuses[f.asset_id] }
+            : f
+        )
+      )
+    } catch (err) {
+      console.error('Failed to poll material statuses:', err)
+    }
+  }, [])
+
+  const handleMaterialLibraryTab = useCallback(async () => {
     setActiveTab('materialLibrary')
-    loadMaterialFiles()
-  }, [loadMaterialFiles])
+    await loadMaterialFiles()
+    // After loading, poll for any Processing assets
+    pollAndMergeStatuses()
+  }, [loadMaterialFiles, pollAndMergeStatuses])
 
   const handleUploadClick = useCallback(() => {
     uploadInputRef.current?.click()
@@ -1137,17 +1176,22 @@ export default function MaterialManager() {
                       className="group relative bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border border-gray-200 dark:border-gray-700 cursor-pointer"
                       onClick={() => setPreviewModal({ isOpen: true, filePath: file.path, fileName: file.name, fileType: file.type })}
                     >
-                      <div className="aspect-square bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 flex items-center justify-center overflow-hidden">
+                      <div className="aspect-square bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 flex items-center justify-center overflow-hidden relative">
                         {file.type === 'image' ? (
                           <img
                             src={file.url}
                             alt={file.name}
                             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                           />
+                        ) : file.type === 'video' ? (
+                          <VideoThumbnail
+                            src={file.url}
+                            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          />
                         ) : (
                           <div className="flex flex-col items-center justify-center text-gray-400">
-                            <Play className="w-8 h-8 text-red-500" />
-                            <span className="text-xs mt-1">VIDEO</span>
+                            {getFileIcon(file.type, 'w-8 h-8')}
+                            <span className="text-xs mt-1">{file.type.toUpperCase()}</span>
                           </div>
                         )}
                       </div>
@@ -1155,7 +1199,10 @@ export default function MaterialManager() {
                         <div className="text-xs font-mono text-gray-700 dark:text-gray-300 truncate" title={file.display_name}>
                           {file.display_name}
                         </div>
-                        <div className="text-xs text-gray-500 mt-1">{formatFileSize(file.size)}</div>
+                        <div className="flex items-center justify-between mt-1 gap-1">
+                          <span className="text-xs text-gray-500">{formatFileSize(file.size)}</span>
+                          <StatusBadge status={file.status} />
+                        </div>
                       </div>
                     </div>
                   ))}

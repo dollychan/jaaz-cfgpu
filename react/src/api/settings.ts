@@ -219,3 +219,12 @@ export const getMaterialFilesApi = async () => {
   if (!response.ok) throw new Error('Failed to list material files')
   return response.json()
 }
+
+export const pollMaterialStatusesApi = async (): Promise<{
+  statuses: Record<string, string>
+  updated: Record<string, string>
+}> => {
+  const response = await fetch('/api/material/poll-status', { method: 'POST' })
+  if (!response.ok) throw new Error('Failed to poll material statuses')
+  return response.json()
+}
