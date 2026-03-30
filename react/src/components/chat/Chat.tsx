@@ -409,10 +409,6 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         return
       }
 
-      setMessages(() => {
-        console.log('👇all_messages', data.messages)
-        return data.messages
-      })
       setMessages(mergeToolCallResult(data.messages))
       scrollToBottom()
     },

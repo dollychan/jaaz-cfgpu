@@ -19,21 +19,35 @@ class GenerateByCfgpuSeedance2_0FastInputSchema(BaseModel):
     )
     input_images: Optional[List[str]] = Field(
         default=None,
-        description="Optional. List of reference image URLs or file IDs for image-to-video generation."
+        description="Optional. List of reference image URLs or file IDs. Usage depends on image_role."
+    )
+    image_role: str = Field(
+        default="auto",
+        description=(
+            "Optional. How input images are used. Ignored when input_images is not set. "
+            "'auto' (default): infer from count — 1 image → first_frame, 2 images → first_last_frame, 3–9 images → reference_image. "
+            "'first_frame': use the single image as the video's starting frame (image-to-video). "
+            "'first_last_frame': use exactly 2 images as starting and ending frames. "
+            "'reference_image': use 1–9 images as style/content references (multimodal reference-to-video)."
+        )
     )
     input_videos: Optional[List[str]] = Field(
         default=None,
-        description="Optional. List of reference video URLs or file IDs for video-to-video generation."
+        description="Optional. List of reference video URLs or file IDs for video-to-video or video extension."
     )
     input_audios: Optional[List[str]] = Field(
         default=None,
-        description="Optional. List of reference audio URLs or file IDs to use as background music. MUST be used together with input_images or input_videos — audio cannot be the only reference input."
+        description="Optional. List of reference audio URLs or file IDs. MUST be used together with input_images or input_videos — audio cannot be the only reference input."
+    )
+    generate_audio: bool = Field(
+        default=True,
+        description="Optional. Whether the output video should contain synchronized audio (voice, sound effects, background music). Default is True. Set to False for silent video output."
     )
     tool_call_id: Annotated[str, InjectedToolCallId]
 
 
 @tool("generate_video_by_cfgpu_seedance_2_0_fast",
-      description="Generate videos quickly using Wan-Video-Fast model via CFGPU provider. Faster than Wan-Video, supports text-to-video, image-to-video, video-to-video, and audio-guided generation.",
+      description="Generate videos quickly using Wan-Video-Fast model via CFGPU provider. Faster generation, supports text-to-video, image-to-video (first frame / bookend frames / multimodal reference), video-to-video, and audio-guided generation.",
       args_schema=GenerateByCfgpuSeedance2_0FastInputSchema)
 async def generate_video_by_cfgpu_seedance_2_0_fast(
     prompt: str,
@@ -42,8 +56,10 @@ async def generate_video_by_cfgpu_seedance_2_0_fast(
     duration: int = 5,
     aspect_ratio: str = "16:9",
     input_images: Optional[List[str]] = None,
+    image_role: str = "auto",
     input_videos: Optional[List[str]] = None,
     input_audios: Optional[List[str]] = None,
+    generate_audio: bool = True,
 ) -> str:
     return await generate_video_with_provider(
         prompt=prompt,
@@ -56,6 +72,8 @@ async def generate_video_by_cfgpu_seedance_2_0_fast(
         input_images=input_images,
         input_videos=input_videos,
         input_audios=input_audios,
+        image_role=image_role,
+        generate_audio=generate_audio,
     )
 
 

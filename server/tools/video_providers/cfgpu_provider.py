@@ -35,13 +35,43 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
         input_image_data: Optional[List[str]] = None,
         input_video_data: Optional[List[str]] = None,
         input_audio_data: Optional[List[str]] = None,
+        image_role: str = "auto",
+        generate_audio: bool = True,
         **kwargs: Any
     ) -> Dict[str, Any]:
+        """
+        image_role controls how input images are submitted to the API.
+        The API defines three mutually exclusive image scenarios:
+          "auto"            – infer from count: 1→first_frame, 2→first_last_frame, 3+→reference_image
+          "first_frame"     – 1 image used as the starting frame of the video
+          "first_last_frame"– 2 images used as starting and ending frames (bookend)
+          "reference_image" – 1–9 images used as style/content references (multimodal)
+        """
         content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
 
         if input_image_data:
-            for img_url in input_image_data:
-                content.append({"type": "image_url", "image_url": {"url": img_url}, "role": "reference_image"})
+            n = len(input_image_data)
+            # Resolve effective role
+            if image_role == "auto":
+                if n == 1:
+                    effective_role = "first_frame"
+                elif n == 2:
+                    effective_role = "first_last_frame"
+                else:
+                    effective_role = "reference_image"
+            else:
+                effective_role = image_role
+
+            if effective_role == "first_last_frame":
+                content.append({"type": "image_url", "image_url": {"url": input_image_data[0]}, "role": "first_frame"})
+                if n >= 2:
+                    content.append({"type": "image_url", "image_url": {"url": input_image_data[1]}, "role": "last_frame"})
+                # Additional images beyond 2 are treated as reference_image
+                for img_url in input_image_data[2:]:
+                    content.append({"type": "image_url", "image_url": {"url": img_url}, "role": "reference_image"})
+            else:
+                for img_url in input_image_data:
+                    content.append({"type": "image_url", "image_url": {"url": img_url}, "role": effective_role})
 
         if input_video_data:
             for vid_url in input_video_data:
@@ -54,7 +84,7 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
         return {
             "model": model,
             "content": content,
-            "generate_audio": bool(input_audio_data),
+            "generate_audio": generate_audio,
             "ratio": aspect_ratio,
             "duration": duration,
             "watermark": False,
@@ -116,6 +146,8 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
         input_videos: Optional[List[str]] = None,
         input_audios: Optional[List[str]] = None,
         camera_fixed: bool = True,
+        image_role: str = "auto",
+        generate_audio: bool = True,
         **kwargs: Any
     ) -> str:
         # cfgpu API constraint: reference_audio cannot be the only reference input
@@ -135,6 +167,8 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
                 input_image_data=input_images,
                 input_video_data=input_videos,
                 input_audio_data=input_audios,
+                image_role=image_role,
+                generate_audio=generate_audio,
                 **kwargs
             )
 

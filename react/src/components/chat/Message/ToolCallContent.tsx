@@ -13,7 +13,9 @@ export const ToolCallContent: React.FC<ToolCallContentProps> = ({
 }) => {
   const isExpanded = expandingToolCalls.includes(message.tool_call_id)
 
-  if (message.content.includes('<hide_in_user_ui>')) {
+  const contentStr =
+    typeof message.content === 'string' ? message.content : ''
+  if (contentStr.includes('<hide_in_user_ui>')) {
     return null
   }
 
@@ -28,7 +30,7 @@ export const ToolCallContent: React.FC<ToolCallContentProps> = ({
           transition={{ duration: 0.2, ease: 'easeOut' }}
           className="p-3 bg-muted rounded-lg"
         >
-          <Markdown>{message.content}</Markdown>
+          <Markdown>{contentStr}</Markdown>
         </motion.div>
       )}
     </AnimatePresence>
@@ -36,13 +38,19 @@ export const ToolCallContent: React.FC<ToolCallContentProps> = ({
 }
 
 const ToolCallContentV2: React.FC<{ content: string }> = ({ content }) => {
-  if (content.includes('<hide_in_user_ui>')) {
+  const contentStr =
+    typeof content === 'string'
+      ? content
+      : content
+        ? JSON.stringify(content)
+        : ''
+  if (contentStr.includes('<hide_in_user_ui>')) {
     return null
   }
 
   return (
     <div className="p-2 bg-muted rounded-lg">
-      <Markdown>{content}</Markdown>
+      <Markdown>{contentStr}</Markdown>
     </div>
   )
 }

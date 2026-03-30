@@ -196,8 +196,8 @@ async def process_video_result(
         return format_video_success_message(filename)
 
     except Exception as e:
-        error_message = str(e)
-        await send_video_error_notification(session_id, error_message)
+        # Re-raise without sending a notification here; the caller
+        # (generate_video_with_provider) is responsible for error reporting.
         raise e
 
 
