@@ -86,9 +86,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
   const quantitySliderRef = useRef<HTMLDivElement>(null)
   const MAX_QUANTITY = 30
 
-  const imageInputRef = useRef<HTMLInputElement>(null)
-  const videoInputRef = useRef<HTMLInputElement>(null)
-  const audioInputRef = useRef<HTMLInputElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [videos, setVideos] = useState<{ file_id: string }[]>([])
   const [audios, setAudios] = useState<{ file_id: string }[]>([])
 
@@ -137,16 +135,37 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
     },
   })
 
-  const handleImagesUpload = useCallback(
+  const handleFileUpload = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files
       if (files) {
         for (const file of files) {
-          uploadImageMutation(file)
+          const type = file.type.toLowerCase()
+          if (type.startsWith('image/')) {
+            uploadImageMutation(file)
+          } else if (type.startsWith('video/')) {
+            uploadVideoMutation(file)
+          } else if (type.startsWith('audio/')) {
+            uploadAudioMutation(file)
+          } else {
+            const ext = file.name.split('.').pop()?.toLowerCase() || ''
+            if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext)) {
+              uploadImageMutation(file)
+            } else if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v', '3gp'].includes(ext)) {
+              uploadVideoMutation(file)
+            } else if (['mp3', 'wav', 'aac', 'm4a', 'ogg', 'flac', 'opus'].includes(ext)) {
+              uploadAudioMutation(file)
+            } else {
+              toast.error('Unknown file type. Please upload image, video, or audio.')
+            }
+          }
         }
       }
+      if (e.target) {
+        e.target.value = ''
+      }
     },
-    [uploadImageMutation]
+    [uploadImageMutation, uploadVideoMutation, uploadAudioMutation]
   )
 
   const { mutate: uploadVideoMutation } = useMutation({
@@ -628,49 +647,19 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
       <div className="flex items-center justify-between gap-2 w-full">
         <div className="flex items-center gap-2 max-w-[calc(100%-50px)] flex-wrap">
           <input
-            ref={imageInputRef}
+            ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,video/*,audio/*"
             multiple
-            onChange={handleImagesUpload}
-            hidden
-          />
-          <input
-            ref={videoInputRef}
-            type="file"
-            accept="video/*"
-            multiple
-            onChange={handleVideosUpload}
-            hidden
-          />
-          <input
-            ref={audioInputRef}
-            type="file"
-            accept="audio/*"
-            multiple
-            onChange={handleAudiosUpload}
+            onChange={handleFileUpload}
             hidden
           />
           <Button
             variant="outline"
             size="sm"
-            onClick={() => imageInputRef.current?.click()}
+            onClick={() => fileInputRef.current?.click()}
           >
             <PlusIcon className="size-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => videoInputRef.current?.click()}
-          >
-            <Video className="size-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => audioInputRef.current?.click()}
-          >
-            <Music className="size-4" />
           </Button>
 
           <ModelSelectorV3 />
