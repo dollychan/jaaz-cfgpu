@@ -566,9 +566,59 @@ export default function MaterialManager() {
     uploadInputRef.current?.click()
   }, [])
 
+  /** Validate a single image file against volcengine asset constraints.
+   *  Returns an error string or null if valid. */
+  const validateImageFile = useCallback((file: File): Promise<string | null> => {
+    const MAX_SIZE = 30 * 1024 * 1024          // 30 MB
+    const MIN_DIM = 300, MAX_DIM = 6000
+    const MIN_RATIO = 0.4, MAX_RATIO = 2.5
+
+    if (file.size > MAX_SIZE) {
+      return Promise.resolve(`${file.name}：图片超过 30 MB 限制`)
+    }
+
+    return new Promise((resolve) => {
+      const url = URL.createObjectURL(file)
+      const img = new window.Image()
+      img.onload = () => {
+        URL.revokeObjectURL(url)
+        const { naturalWidth: w, naturalHeight: h } = img
+        if (w < MIN_DIM || w > MAX_DIM || h < MIN_DIM || h > MAX_DIM) {
+          resolve(`${file.name}：图片尺寸 ${w}×${h} 不在允许范围 300–6000 px 内`)
+          return
+        }
+        const ratio = w / h
+        if (ratio < MIN_RATIO || ratio > MAX_RATIO) {
+          resolve(`${file.name}：宽高比 ${ratio.toFixed(2)} 不在允许范围 0.4–2.5 内`)
+          return
+        }
+        resolve(null)
+      }
+      img.onerror = () => {
+        URL.revokeObjectURL(url)
+        resolve(null) // can't validate, let backend decide
+      }
+      img.src = url
+    })
+  }, [])
+
   const handleUploadChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
     if (!files.length) return
+
+    // Validate images before uploading
+    const imageFiles = files.filter((f) => f.type.startsWith('image/'))
+    const errors: string[] = []
+    for (const f of imageFiles) {
+      const err = await validateImageFile(f)
+      if (err) errors.push(err)
+    }
+    if (errors.length > 0) {
+      errors.forEach((msg) => toast.error(msg, { duration: 6000 }))
+      if (uploadInputRef.current) uploadInputRef.current.value = ''
+      return
+    }
+
     setUploading(true)
     try {
       await Promise.all(files.map((f) => uploadMaterialApi(f)))
@@ -580,7 +630,7 @@ export default function MaterialManager() {
       setUploading(false)
       if (uploadInputRef.current) uploadInputRef.current.value = ''
     }
-  }, [loadMaterialFiles])
+  }, [loadMaterialFiles, validateImageFile])
 
   const getFileIcon = useCallback(
     (type: string, className: string = 'w-4 h-4') => {
@@ -1124,7 +1174,7 @@ export default function MaterialManager() {
                   <input
                     ref={uploadInputRef}
                     type="file"
-                    accept="image/*,video/*,audio/*"
+                    accept="image/*,video/*,audio/*,.heic,.heif,.tiff,.tif"
                     multiple
                     className="hidden"
                     onChange={handleUploadChange}

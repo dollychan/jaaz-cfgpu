@@ -11,9 +11,13 @@ from utils.volcengine_sign import volcengine_post
 router = APIRouter(prefix="/api/material")
 
 ALLOWED_TYPES = {
+    # Images
     "image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp",
+    "image/tiff", "image/heic", "image/heif",
+    # Videos
     "video/mp4", "video/webm", "video/quicktime", "video/x-msvideo",
     "video/x-matroska", "video/mpeg",
+    # Audio
     "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav",
     "audio/aac", "audio/flac", "audio/x-flac", "audio/m4a",
     "audio/x-m4a", "audio/ogg", "audio/opus",
