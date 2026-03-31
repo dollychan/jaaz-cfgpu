@@ -756,53 +756,87 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
           </Button>
 
           {/* Material library asset picker */}
-          {materialFiles.length > 0 && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <Library className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-56 max-h-72 overflow-y-auto">
-                {materialFiles
-                  .filter(
+          <Popover
+            open={assetPickerOpen}
+            onOpenChange={(open) => {
+              setAssetPickerOpen(open)
+              if (!open) setAssetSearchQuery('')
+            }}
+          >
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Library className="size-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-80 p-0">
+              {/* Search input */}
+              <div className="flex items-center gap-2 px-3 py-2 border-b">
+                <Search className="size-4 shrink-0 text-muted-foreground" />
+                <Input
+                  value={assetSearchQuery}
+                  onChange={(e) => setAssetSearchQuery(e.target.value)}
+                  placeholder="搜索素材…"
+                  className="h-7 border-0 p-0 text-sm shadow-none focus-visible:ring-0"
+                />
+              </div>
+              {/* Grid */}
+              <div className="max-h-80 overflow-y-auto p-2">
+                {(() => {
+                  const filtered = materialFiles.filter(
                     (r) =>
                       r &&
                       r.disk_name &&
                       r.serve_url &&
-                      r.status &&
-                      r.status === 'Active'
+                      r.status === 'Active' &&
+                      (r.name ?? '').toLowerCase().includes(assetSearchQuery.toLowerCase())
                   )
-                  .map((rec) => (
-                    <DropdownMenuItem
-                      key={rec.asset_id || rec.fid}
-                      onClick={() => addAssetToChat(rec)}
-                      className="flex items-center gap-2"
-                    >
-                      {rec.file_type === 'image' && rec.serve_url && (
-                        <img
-                          src={rec.serve_url}
-                          alt={rec.name || 'Material'}
-                          className="size-6 rounded object-cover shrink-0"
-                          onError={(e) => {
-                            ;(e.target as HTMLImageElement).style.display = 'none'
+                  if (filtered.length === 0) {
+                    return (
+                      <p className="py-6 text-center text-sm text-muted-foreground">
+                        无匹配素材
+                      </p>
+                    )
+                  }
+                  return (
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {filtered.map((rec) => (
+                        <button
+                          key={rec.asset_id || rec.fid}
+                          onClick={() => {
+                            addAssetToChat(rec)
+                            setAssetPickerOpen(false)
                           }}
-                        />
-                      )}
-                      {rec.file_type === 'video' && (
-                        <Video className="size-4 shrink-0 text-muted-foreground" />
-                      )}
-                      {rec.file_type === 'audio' && (
-                        <Music className="size-4 shrink-0 text-muted-foreground" />
-                      )}
-                      <span className="truncate text-sm">
-                        {rec.name || `Asset ${rec.asset_id}`}
-                      </span>
-                    </DropdownMenuItem>
-                  ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+                          className="group flex flex-col items-center gap-1 rounded-md p-1 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          {rec.file_type === 'image' && rec.serve_url ? (
+                            <img
+                              src={rec.serve_url}
+                              alt={rec.name || 'Material'}
+                              className="h-16 w-full rounded object-cover"
+                              onError={(e) => {
+                                ;(e.target as HTMLImageElement).style.display = 'none'
+                              }}
+                            />
+                          ) : rec.file_type === 'video' ? (
+                            <div className="flex h-16 w-full items-center justify-center rounded bg-muted">
+                              <Video className="size-6 text-muted-foreground" />
+                            </div>
+                          ) : (
+                            <div className="flex h-16 w-full items-center justify-center rounded bg-muted">
+                              <Music className="size-6 text-muted-foreground" />
+                            </div>
+                          )}
+                          <span className="w-full truncate text-center text-xs text-muted-foreground group-hover:text-foreground">
+                            {rec.name || `Asset ${rec.asset_id}`}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )
+                })()}
+              </div>
+            </PopoverContent>
+          </Popover>
 
           <ModelSelectorV3 />
 
