@@ -42,6 +42,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 type ChatTextareaProps = {
   pending: boolean
@@ -847,15 +853,28 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
             <Square className="size-2 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
           </Button>
         ) : (
-          <Button
-            className="shrink-0"
-            variant="default"
-            size="icon"
-            onClick={handleSendPrompt}
-            disabled={(!textModel && !selectedTools?.length) || prompt.length === 0}
-          >
-            <ArrowUp className="size-4" />
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  className="shrink-0"
+                  variant="default"
+                  size="icon"
+                  onClick={handleSendPrompt}
+                  disabled={(!textModel && !selectedTools?.length) || prompt.length === 0}
+                >
+                  <ArrowUp className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                {(!textModel && !selectedTools?.length)
+                  ? t('chat:textarea.selectModelOrTool', 'Please select at least one model or tool')
+                  : prompt.length === 0
+                    ? t('chat:textarea.enterPrompt', 'Please enter a message')
+                    : t('chat:textarea.send', 'Send message')}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )}
       </div>
     </motion.div>

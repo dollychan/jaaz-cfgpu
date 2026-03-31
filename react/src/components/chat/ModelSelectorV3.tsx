@@ -186,9 +186,23 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
         }
       }
     } else if (autoMode) {
-      // Auto mode: toggle selection
-      const isSelected = selectedTools.some(t => t.provider + ':' + t.id === modelKey)
-      handleModelToggle(modelKey, !isSelected)
+      // Auto mode: clicking a tool should switch to non-auto mode and select only that tool
+      // This ensures consistency with non-auto behavior (mutually exclusive selection)
+      const tool = allTools.find((m) => m.provider + ':' + m.id === modelKey)
+      if (tool) {
+        setSelectedTools([tool])
+        setTextModel(undefined)
+        localStorage.removeItem('text_model')
+        localStorage.setItem(
+          'disabled_tool_ids',
+          JSON.stringify(
+            allTools.filter((t) => t.id !== tool.id).map((t) => t.id)
+          )
+        )
+        setAutoMode(false)
+        onAutoToggle?.(false)
+        onModelToggle?.(modelKey, true)
+      }
     } else {
       // Non-auto mode: single tool selection across all types, exclusive with text model
       const isAlreadySelected = selectedTools.some(t => t.provider + ':' + t.id === modelKey)
