@@ -151,7 +151,13 @@ async def _create_asset(public_url: str, asset_type: str) -> str:
         response.raise_for_status()
         result = response.json()
 
-    asset_id = result.get("assetId") or result.get("id") or result.get("Id")
+    # Response shape: { "Result": { "Id": "asset-..." }, "ResponseMetadata": {...} }
+    asset_id = (
+        (result.get("Result") or {}).get("Id")
+        or result.get("assetId")
+        or result.get("id")
+        or result.get("Id")
+    )
     if not asset_id:
         raise ValueError(f"CreateAsset returned no assetId: {result}")
     return asset_id
@@ -286,8 +292,13 @@ async def poll_material_statuses():
         for asset_id in to_poll:
             try:
                 result = await _get_asset(asset_id)
-                # Extract status from response
-                status = result.get("status") or result.get("Status")
+                # Response shape mirrors CreateAsset: { "Result": { "Status": "..." } }
+                status = (
+                    (result.get("Result") or {}).get("Status")
+                    or (result.get("Result") or {}).get("status")
+                    or result.get("status")
+                    or result.get("Status")
+                )
                 if status:
                     cache[asset_id] = status
                     updated[asset_id] = status
