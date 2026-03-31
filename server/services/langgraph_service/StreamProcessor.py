@@ -59,6 +59,30 @@ class StreamProcessor:
         if not isinstance(oai_messages, list):
             oai_messages = [oai_messages] if oai_messages else []
 
+        # Filter out LangGraph "not a valid tool" error messages so they don't
+        # appear in the frontend chat history.
+        invalid_tool_call_ids: set = set()
+        for msg in oai_messages:
+            if msg.get('role') == 'tool':
+                content = msg.get('content', '')
+                if isinstance(content, str) and 'is not a valid tool' in content:
+                    invalid_tool_call_ids.add(msg.get('tool_call_id', ''))
+        if invalid_tool_call_ids:
+            filtered: list = []
+            for msg in oai_messages:
+                if msg.get('role') == 'tool' and msg.get('tool_call_id', '') in invalid_tool_call_ids:
+                    continue
+                if msg.get('role') == 'assistant' and msg.get('tool_calls'):
+                    clean_calls = [tc for tc in msg['tool_calls'] if tc.get('id', '') not in invalid_tool_call_ids]
+                    if clean_calls:
+                        msg = {**msg, 'tool_calls': clean_calls}
+                    elif not msg.get('content'):
+                        continue
+                    else:
+                        msg = {k: v for k, v in msg.items() if k != 'tool_calls'}
+                filtered.append(msg)
+            oai_messages = filtered
+
         # 发送所有消息到前端
         await self.websocket_service(self.session_id, {
             'type': 'all_messages',
@@ -84,6 +108,12 @@ class StreamProcessor:
 
             if isinstance(ai_message_chunk, ToolMessage):
                 # 工具调用结果之后会在 values 类型中发送到前端，这里会更快出现一些
+                tool_content = ai_message_chunk.content if isinstance(ai_message_chunk.content, str) else ''
+                # Suppress LangGraph internal "not a valid tool" errors — the LLM
+                # recovers automatically and the user doesn't need to see these.
+                if 'is not a valid tool' in tool_content:
+                    print(f'🔕 Suppressed invalid-tool error from UI: {tool_content[:120]}')
+                    return
                 oai_message = convert_to_openai_messages([ai_message_chunk])[0]
                 print('👇toolcall res oai_message', oai_message)
                 await self.websocket_service(self.session_id, {
