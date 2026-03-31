@@ -100,10 +100,22 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const sessionId = session?.id ?? searchSessionId
 
   const sessionIdRef = useRef<string>(session?.id || nanoid())
+  // Tracks whether a 'done' WebSocket event arrived while initChat was still
+  // awaiting its fetches.  If true, initChat must not overwrite the correct
+  // pending=false with a stale pending='tool'.
+  const doneReceivedDuringInitRef = useRef(false)
   const [expandingToolCalls, setExpandingToolCalls] = useState<string[]>([])
   const [pendingToolConfirmations, setPendingToolConfirmations] = useState<
     string[]
   >([])
+  // Ref mirror of pendingToolConfirmations so handleToolCallArguments can read
+  // the latest value without being listed as a useCallback dependency (which
+  // would cause the event handler to be re-registered on every confirmation
+  // toggle → double event subscription → duplicate argument appends).
+  const pendingToolConfirmationsRef = useRef<string[]>([])
+  useEffect(() => {
+    pendingToolConfirmationsRef.current = pendingToolConfirmations
+  }, [pendingToolConfirmations])
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const isAtBottomRef = useRef(false)
@@ -363,7 +375,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             )
             if (toolCall) {
               // 检查是否是待确认的工具调用，如果是则跳过参数追加
-              if (pendingToolConfirmations.includes(data.id)) {
+              if (pendingToolConfirmationsRef.current.includes(data.id)) {
                 return
               }
               toolCall.function.arguments += data.text
@@ -373,7 +385,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       )
       scrollToBottom()
     },
-    [sessionId, scrollToBottom, pendingToolConfirmations]
+    [sessionId, scrollToBottom]
   )
 
   const handleToolCallResult = useCallback(
@@ -425,17 +437,33 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       }
 
       // Use functional update so we can read the current messages and
-      // reuse their __uid values by position.  Generating fresh UIDs for
-      // every message on each all_messages event causes React key churn:
-      // React sees entirely different keys and tries to unmount/remount
-      // nodes that are still being committed by a concurrent update
-      // (e.g. handleToolCallResult), which triggers an insertBefore crash.
+      // reuse their __uid values.  Generating fresh UIDs on every all_messages
+      // event causes React key churn that triggers insertBefore DOM crashes.
+      //
+      // We match by tool_call_id first (stable across concurrent events such as
+      // handleToolCall appending a message just before all_messages arrives),
+      // then fall back to positional index for non-tool-call messages.
       setMessages((prev) => {
+        // Build stable lookup: first tool_call id of each assistant message → __uid
+        const uidByToolCallId = new Map<string, string>()
+        for (const m of prev) {
+          if (m.role === 'assistant' && (m as any).tool_calls?.length && (m as MessageWithUid).__uid) {
+            const firstId = (m as any).tool_calls[0].id as string
+            uidByToolCallId.set(firstId, (m as MessageWithUid).__uid!)
+          }
+        }
+
         const merged = mergeToolCallResult(data.messages)
-        return merged.map((msg, idx) => ({
-          ...msg,
-          __uid: prev[idx]?.__uid ?? msg.__uid,
-        }))
+        return merged.map((msg, idx) => {
+          // Prefer match by tool_call_id — unaffected by concurrent appends
+          let existingUid: string | undefined
+          if (msg.role === 'assistant' && (msg as any).tool_calls?.length) {
+            existingUid = uidByToolCallId.get((msg as any).tool_calls[0].id)
+          }
+          // Fall back to positional match for regular messages
+          existingUid = existingUid ?? (prev[idx] as MessageWithUid)?.__uid ?? (msg as MessageWithUid).__uid
+          return { ...msg, __uid: existingUid }
+        })
       })
       scrollToBottom()
     },
@@ -448,6 +476,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         return
       }
 
+      // Signal initChat not to overwrite this with a stale 'tool' pending value
+      doneReceivedDuringInitRef.current = true
       setPending(false)
       scrollToBottom()
 
@@ -560,6 +590,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     }
 
     sessionIdRef.current = sessionId
+    // Reset so we can detect a 'done' event that fires during our fetches
+    doneReceivedDuringInitRef.current = false
 
     const [msgResp, runningResp] = await Promise.all([
       fetch('/api/chat_session/' + sessionId),
@@ -577,10 +609,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       setInitCanvas(false)
     }
 
-    // Set pending in one call after all data is available, avoiding the
-    // race where a WebSocket 'done' event fires during the fetch and then
-    // gets overwritten by a stale setPending('tool').
-    setPending(running ? 'tool' : false)
+    // If a 'done' WebSocket event arrived while we were awaiting the fetches,
+    // handleDone already set pending=false — skip to avoid overwriting it with
+    // a stale 'tool' value and leaving the spinner stuck forever.
+    if (!doneReceivedDuringInitRef.current) {
+      setPending(running ? 'tool' : false)
+    }
 
     scrollToBottom()
   }, [sessionId, scrollToBottom, setInitCanvas])
