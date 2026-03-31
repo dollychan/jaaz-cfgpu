@@ -544,7 +544,8 @@ export default function MaterialManager() {
   /** Poll Processing assets and merge updated statuses into materialFiles state. */
   const pollAndMergeStatuses = useCallback(async () => {
     try {
-      const { statuses } = await pollMaterialStatusesApi()
+      const response = await pollMaterialStatusesApi()
+      const statuses = response?.statuses ?? {}
       setMaterialFiles((prev) =>
         prev.map((f) =>
           f.asset_id && statuses[f.asset_id] !== undefined
