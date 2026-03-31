@@ -19,12 +19,25 @@ export type AssetFileRecord = {
 export async function getMaterialFilesApi(): Promise<AssetFileRecord[]> {
   const res = await fetch('/api/material/files')
   if (!res.ok) throw new Error(`Failed to fetch materials: ${res.status}`)
-  const data: (Omit<AssetFileRecord, 'serve_url'> & { url?: string })[] = await res.json()
-  // map server `url` field (local serve path) to `serve_url` for clarity
-  return data.map((r) => ({
-    ...r,
-    serve_url: (r as any).url ?? null,
-  }))
+  const rawData: any[] = await res.json()
+  // Ensure all records have required fields with defaults
+  return rawData
+    .filter((item) => item && typeof item === 'object')
+    .map((r: any) => ({
+      fid: r.fid ?? 0,
+      name: r.name ?? 'Unknown',
+      asset_id: r.asset_id ?? '',
+      group_id: r.group_id ?? '',
+      status: r.status ?? 'Unknown',
+      asset_type: r.asset_type ?? 'Image',
+      project_name: r.project_name ?? 'default',
+      url: r.url ?? '',
+      created_at: r.created_at ?? '',
+      updated_at: r.updated_at ?? '',
+      disk_name: r.disk_name ?? null,
+      file_type: r.file_type ?? null,
+      serve_url: r.url ?? null,
+    }))
 }
 
 export async function pollMaterialStatusesApi(): Promise<{

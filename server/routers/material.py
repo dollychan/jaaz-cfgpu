@@ -224,27 +224,43 @@ async def list_materials():
             if stem == asset_id:
                 disk_name = fname
                 break
-        if disk_name is None:
-            # File missing on disk — include record but no url
-            results.append({
-                **rec,
-                "disk_name": None,
-                "url": None,
-                "size": None,
-                "mtime": None,
-                "file_type": None,
-            })
-            continue
-        full = os.path.join(MATERIALS_DIR, disk_name)
-        stat = os.stat(full)
-        results.append({
-            **rec,
+
+        # Always return complete record with all fields
+        item = {
+            "fid": rec.get("fid"),
+            "name": rec.get("name", "Unknown"),
+            "asset_id": rec.get("asset_id", ""),
+            "group_id": rec.get("group_id", ""),
+            "status": rec.get("status", "Unknown"),
+            "asset_type": rec.get("asset_type", "Image"),
+            "project_name": rec.get("project_name", "default"),
+            "url": rec.get("url", ""),
+            "created_at": rec.get("created_at", ""),
+            "updated_at": rec.get("updated_at", ""),
             "disk_name": disk_name,
-            "url": f"/api/material/serve/{disk_name}",
-            "size": stat.st_size,
-            "mtime": stat.st_mtime,
-            "file_type": _file_type(disk_name),
-        })
+            "file_type": None,
+        }
+
+        if disk_name is None:
+            # File missing on disk
+            item["url"] = None
+            item["size"] = None
+            item["mtime"] = None
+        else:
+            full = os.path.join(MATERIALS_DIR, disk_name)
+            try:
+                stat = os.stat(full)
+                item["url"] = f"/api/material/serve/{disk_name}"
+                item["size"] = stat.st_size
+                item["mtime"] = stat.st_mtime
+                item["file_type"] = _file_type(disk_name)
+            except OSError:
+                item["url"] = None
+                item["size"] = None
+                item["mtime"] = None
+
+        results.append(item)
+
     return results
 
 

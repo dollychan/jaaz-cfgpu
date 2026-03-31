@@ -755,18 +755,28 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-56 max-h-72 overflow-y-auto">
                 {materialFiles
-                  .filter((r) => r.disk_name && r.serve_url && r.status === 'Active')
+                  .filter(
+                    (r) =>
+                      r &&
+                      r.disk_name &&
+                      r.serve_url &&
+                      r.status &&
+                      r.status === 'Active'
+                  )
                   .map((rec) => (
                     <DropdownMenuItem
-                      key={rec.asset_id}
+                      key={rec.asset_id || rec.fid}
                       onClick={() => addAssetToChat(rec)}
                       className="flex items-center gap-2"
                     >
-                      {rec.file_type === 'image' && (
+                      {rec.file_type === 'image' && rec.serve_url && (
                         <img
-                          src={rec.serve_url!}
-                          alt={rec.name}
+                          src={rec.serve_url}
+                          alt={rec.name || 'Material'}
                           className="size-6 rounded object-cover shrink-0"
+                          onError={(e) => {
+                            ;(e.target as HTMLImageElement).style.display = 'none'
+                          }}
                         />
                       )}
                       {rec.file_type === 'video' && (
@@ -775,7 +785,9 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
                       {rec.file_type === 'audio' && (
                         <Music className="size-4 shrink-0 text-muted-foreground" />
                       )}
-                      <span className="truncate text-sm">{rec.name}</span>
+                      <span className="truncate text-sm">
+                        {rec.name || `Asset ${rec.asset_id}`}
+                      </span>
                     </DropdownMenuItem>
                   ))}
               </DropdownMenuContent>
