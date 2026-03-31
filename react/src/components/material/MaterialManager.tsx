@@ -37,6 +37,7 @@ import {
   getMaterialFilesApi,
   pollMaterialStatusesApi,
 } from '@/api/settings'
+import { renameMaterialApi } from '@/api/material'
 import { readPNGMetadata } from '@/utils/pngMetadata'
 import FilePreviewModal from './FilePreviewModal'
 import { Button } from '../ui/button'
@@ -318,6 +319,8 @@ export default function MaterialManager() {
     status?: string | null   // 'Processing' | 'Active' | 'Failed' | null
   }>>([])
   const [materialLoading, setMaterialLoading] = useState(false)
+  const [editingAssetId, setEditingAssetId] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState('')
   const [uploading, setUploading] = useState(false)
   const uploadInputRef = useRef<HTMLInputElement>(null)
   const { t } = useTranslation()
@@ -557,6 +560,25 @@ export default function MaterialManager() {
       console.error('Failed to poll material statuses:', err)
     }
   }, [])
+
+  const handleRenameConfirm = useCallback(async (assetId: string, currentName: string) => {
+    const newName = editingName.trim()
+    setEditingAssetId(null)
+    if (!newName || newName === currentName) return
+    // Optimistic update
+    setMaterialFiles((prev) =>
+      prev.map((f) => (f.asset_id === assetId ? { ...f, name: newName } : f))
+    )
+    try {
+      await renameMaterialApi(assetId, newName)
+    } catch (err) {
+      // Rollback
+      setMaterialFiles((prev) =>
+        prev.map((f) => (f.asset_id === assetId ? { ...f, name: currentName } : f))
+      )
+      toast.error('重命名失败', { description: `${err}` })
+    }
+  }, [editingName])
 
   const handleMaterialLibraryTab = useCallback(async () => {
     setActiveTab('materialLibrary')
