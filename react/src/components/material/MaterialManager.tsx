@@ -314,7 +314,7 @@ export default function MaterialManager() {
   const [activeTab, setActiveTab] = useState<'myAssets' | 'materialLibrary'>('myAssets')
   const [materialFiles, setMaterialFiles] = useState<Array<{
     name: string; asset_id: string | null; display_name: string;
-    path: string; size: number; mtime: number; type: string; url: string
+    path: string; size: number; mtime: number; file_type: string; url: string
     status?: string | null   // 'Processing' | 'Active' | 'Failed' | null
   }>>([])
   const [materialLoading, setMaterialLoading] = useState(false)
@@ -426,7 +426,7 @@ export default function MaterialManager() {
         isOpen: true,
         filePath: file.path,
         fileName: file.name,
-        fileType: file.type,
+        fileType: file.file_type,
       })
     }
   }, [])
@@ -447,7 +447,7 @@ export default function MaterialManager() {
       const fileDetails: FileDetails = { ...file }
 
       // 如果是图片，获取尺寸信息
-      if (file.type === 'image') {
+      if (file.file_type === 'image') {
         try {
           const dimensions = await getImageDimensions(file.path)
           fileDetails.dimensions = dimensions
@@ -482,7 +482,7 @@ export default function MaterialManager() {
         {
           filePath: file.path,
           fileName: file.name,
-          fileType: file.type,
+          fileType: file.file_type,
           width: undefined,
           height: undefined,
         },
@@ -864,7 +864,7 @@ export default function MaterialManager() {
               {/* Model Badge for PNG images */}
               <ImageModelBadge filePath={file.path} fileName={file.name} />
 
-              {file.type === 'image' ? (
+              {file.file_type === 'image' ? (
                 <img
                   src={getFileServiceUrl(file.path)}
                   alt={file.name}
@@ -876,14 +876,14 @@ export default function MaterialManager() {
                     )
                   }}
                 />
-              ) : file.type === 'video' ? (
+              ) : file.file_type === 'video' ? (
                 <VideoThumbnail
                   src={getFileServiceUrl(file.path)}
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                 />
               ) : (
                 <div className="flex flex-col items-center justify-center text-gray-400">
-                  {getFileIcon(file.type, 'w-8 h-8')}
+                  {getFileIcon(file.file_type, 'w-8 h-8')}
                   <span className="text-xs mt-1">
                     {file.type.toUpperCase()}
                   </span>
@@ -944,7 +944,7 @@ export default function MaterialManager() {
                   </div>
                 )}
 
-              {file.type === 'image' ? (
+              {file.file_type === 'image' ? (
                 <img
                   src={getFileServiceUrl(file.path)}
                   alt={file.name}
@@ -956,7 +956,7 @@ export default function MaterialManager() {
                     )
                   }}
                 />
-              ) : file.type === 'video' ? (
+              ) : file.file_type === 'video' ? (
                 <VideoThumbnail
                   src={getFileServiceUrl(file.path)}
                   className="w-full h-full object-cover"
@@ -1286,18 +1286,18 @@ export default function MaterialManager() {
                       onClick={() => setPreviewModal({ isOpen: true, filePath: file.path, fileName: file.name, fileType: file.type })}
                     >
                       <div className="aspect-square bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 flex items-center justify-center overflow-hidden relative">
-                        {file.type === 'image' ? (
+                        {file.file_type === 'image' ? (
                           <img
                             src={file.url}
                             alt={file.name}
                             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                           />
-                        ) : file.type === 'video' ? (
+                        ) : file.file_type === 'video' ? (
                           <VideoThumbnail
                             src={getFileServiceUrl(file.path)}
                             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                           />
-                        ) : file.type === 'audio' ? (
+                        ) : file.file_type === 'audio' ? (
                           <div className="flex flex-col items-center justify-center text-gray-400 gap-2">
                             <Music className="w-10 h-10 text-green-500" />
                             <span className="text-xs font-medium text-gray-500 truncate max-w-[90%]" title={file.name}>
@@ -1306,16 +1306,16 @@ export default function MaterialManager() {
                           </div>
                         ) : (
                           <div className="flex flex-col items-center justify-center text-gray-400">
-                            {getFileIcon(file.type, 'w-8 h-8')}
-                            <span className="text-xs mt-1">{file.type.toUpperCase()}</span>
+                            {getFileIcon(file.file_type, 'w-8 h-8')}
+                            <span className="text-xs mt-1">{file.file_type.toUpperCase()}</span>
                           </div>
                         )}
                         {/* Copy Asset ID button - only show for assets with asset_id */}
                         {file.asset_id && file.status === 'Active' && (
                           <button
-                            onClick={(e) => handleCopyAssetId(file.asset_id!, file.type, e)}
+                            onClick={(e) => handleCopyAssetId(file.asset_id!, file.file_type, e)}
                             className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 rounded-lg transition-colors"
-                            title={`复制为 ${file.type === 'video' ? 'video_url' : file.type === 'audio' ? 'audio_url' : 'image_url'} 结构`}
+                            title={`复制为 ${file.file_type === 'video' ? 'video_url' : file.file_type === 'audio' ? 'audio_url' : 'image_url'} 结构`}
                           >
                             {copiedAssetId === file.asset_id ? (
                               <Check className="w-4 h-4 text-green-400" />
@@ -1343,9 +1343,9 @@ export default function MaterialManager() {
                             <StatusBadge status={file.status} />
                             {file.asset_id && file.status === 'Active' && (
                               <button
-                                onClick={(e) => handleCopyAssetId(file.asset_id!, file.type, e)}
+                                onClick={(e) => handleCopyAssetId(file.asset_id!, file.file_type, e)}
                                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
-                                title={`复制为 ${file.type === 'video' ? 'video_url' : file.type === 'audio' ? 'audio_url' : 'image_url'} 结构`}
+                                title={`复制为 ${file.file_type === 'video' ? 'video_url' : file.file_type === 'audio' ? 'audio_url' : 'image_url'} 结构`}
                               >
                                 {copiedAssetId === file.asset_id ? (
                                   <Check className="w-3 h-3 text-green-500" />
