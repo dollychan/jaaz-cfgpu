@@ -5,8 +5,8 @@ import mimetypes
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 import aiofiles
+import httpx
 from services.config_service import MATERIALS_DIR, config_service
-from utils.volcengine_sign import volcengine_post
 
 router = APIRouter(prefix="/api/material")
 
@@ -59,17 +59,28 @@ def _ensure_dir():
 
 def _file_type(name: str) -> str:
     ext = os.path.splitext(name)[1].lower()
-    if ext in {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}:
+    if ext in {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp",
+               ".tiff", ".tif", ".heic", ".heif"}:
         return "image"
     if ext in {".mp4", ".webm", ".mov", ".avi", ".mkv", ".mpeg", ".mpg"}:
         return "video"
-    if ext in {".mp3", ".wav", ".aac", ".flac", ".m4a", ".ogg"}:
+    if ext in {".mp3", ".wav", ".aac", ".flac", ".m4a", ".ogg", ".opus"}:
         return "audio"
     return "file"
 
 
-def _get_ml_config():
-    return config_service.app_config.get("material_library", {})
+def _get_cfgpu_config() -> tuple[str, str, str]:
+    """Return (api_key, base_url) from the shared cfgpu config section.
+
+    base_url is derived the same way as CfgpuImageProvider / CfgpuVideoProvider
+    so the user only needs to configure cfgpu once.
+    """
+    cfg = config_service.app_config.get("cfgpu", {})
+    api_key = cfg.get("api_key", "")
+    text_url = cfg.get("url", "https://www.cfgpu.com/userapi/v1/model/v1/").rstrip("/")
+    base_url = text_url.removesuffix("/model/v1")
+    project_name = cfg.get("project_name", "default") or "default"
+    return api_key, base_url, project_name
 
 
 # ---------- Status cache helpers ----------
@@ -97,59 +108,52 @@ def _save_status_cache(cache: dict) -> None:
 
 
 async def _get_asset(asset_id: str) -> dict:
-    """Call volcengine GetAsset API and return the result dict."""
-    cfg = _get_ml_config()
-    ak = cfg.get("ak", "")
-    sk = cfg.get("sk", "")
-    project_name = cfg.get("project_name", "default") or "default"
+    """Call CFGPU assets status API and return the result dict.
 
-    if not ak or not sk:
-        raise ValueError("material_library AK/SK are not configured")
+    GET /userapi/v1/assets/status?assetId=<assetId>
+    """
+    api_key, base_url, _ = _get_cfgpu_config()
+    if not api_key:
+        raise ValueError("cfgpu api_key is not configured")
 
-    payload: dict = {"Id": asset_id}
-    if project_name and project_name != "default":
-        payload["ProjectName"] = project_name
-
-    result = await volcengine_post(
-        ak=ak, sk=sk,
-        service="ark",
-        action="GetAsset",
-        version="2024-01-01",
-        body=payload,
-    )
-    return result
-
-
-async def _create_asset(public_url: str, asset_type: str, name: str) -> str:
-    """Call volcengine CreateAsset API and return the asset ID."""
-    cfg = _get_ml_config()
-    ak = cfg.get("ak", "")
-    sk = cfg.get("sk", "")
-    group_id = cfg.get("group_id", "")
-    project_name = cfg.get("project_name", "default") or "default"
-
-    if not ak or not sk or not group_id:
-        raise ValueError("material_library AK/SK/group_id are not configured")
-
-    payload = {
-        "GroupId": group_id,
-        "URL": public_url,
-        "AssetType": asset_type,
-        "Name": name,
+    url = f"{base_url}/assets/status?assetId={asset_id}"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
     }
-    if project_name and project_name != "default":
-        payload["ProjectName"] = project_name
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.get(url, headers=headers)
+        response.raise_for_status()
+        return response.json()
 
-    result = await volcengine_post(
-        ak=ak, sk=sk,
-        service="ark",
-        action="CreateAsset",
-        version="2024-01-01",
-        body=payload,
-    )
-    asset_id = (result.get("Result") or result).get("Id") or result.get("Id")
+
+async def _create_asset(public_url: str, asset_type: str) -> str:
+    """Call CFGPU assets create API and return the asset ID.
+
+    POST /userapi/v1/assets/create  { url, assetType, projectName }
+    """
+    api_key, base_url, project_name = _get_cfgpu_config()
+    if not api_key:
+        raise ValueError("cfgpu api_key is not configured")
+
+    url = f"{base_url}/assets/create"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    }
+    payload = {
+        "url": public_url,
+        "assetType": asset_type,
+        "projectName": project_name,
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+        result = response.json()
+
+    asset_id = result.get("assetId") or result.get("id") or result.get("Id")
     if not asset_id:
-        raise ValueError(f"CreateAsset returned no Id: {result}")
+        raise ValueError(f"CreateAsset returned no assetId: {result}")
     return asset_id
 
 
@@ -181,24 +185,32 @@ async def upload_material(file: UploadFile = File(...)):
     final_name = tmp_name
     final_dest = dest
 
-    # TODO: 配置好 AK/SK/GroupId 后取消注释，将素材上传到火山引擎素材库
-    # cfg = _get_ml_config()
-    # public_base = (cfg.get("public_base_url") or "").rstrip("/")
-    # if public_base and cfg.get("ak") and cfg.get("sk") and cfg.get("group_id"):
-    #     public_url = f"{public_base}/api/material/serve/{tmp_name}"
-    #     try:
-    #         asset_id = await _create_asset(
-    #             public_url=public_url,
-    #             asset_type=_ASSET_TYPE_MAP.get(ftype, "Image"),
-    #             name=file.filename or tmp_name,
-    #         )
-    #         # Rename local file to use asset ID
-    #         final_name = f"{asset_id}{ext}"
-    #         final_dest = os.path.join(MATERIALS_DIR, final_name)
-    #         os.rename(dest, final_dest)
-    #         stat = os.stat(final_dest)
-    #     except Exception as e:
-    #         print(f"⚠️ CreateAsset failed (file kept with tmp name): {e}")
+    # Upload to CFGPU asset library when api_key is configured.
+    # Use JAAZ_SERVER_URL env var so CFGPU can fetch the file from our server.
+    api_key, _, _ = _get_cfgpu_config()
+    public_base = os.environ.get("JAAZ_SERVER_URL", "").rstrip("/")
+
+    if api_key and public_base:
+        public_url = f"{public_base}/api/material/serve/{tmp_name}"
+        try:
+            asset_id = await _create_asset(
+                public_url=public_url,
+                asset_type=_ASSET_TYPE_MAP.get(ftype, "Image"),
+            )
+            # Rename local file to use asset ID
+            final_name = f"{asset_id}{ext}"
+            final_dest = os.path.join(MATERIALS_DIR, final_name)
+            os.rename(dest, final_dest)
+            stat = os.stat(final_dest)
+            
+            # Initialize status as Processing
+            cache = _load_status_cache()
+            cache[asset_id] = "Processing"
+            _save_status_cache(cache)
+            
+            print(f"✅ Asset created: {asset_id}, status initialized as Processing")
+        except Exception as e:
+            print(f"⚠️ CreateAsset failed (file kept with tmp name): {e}")
 
     return {
         "success": True,
@@ -246,7 +258,7 @@ async def list_materials():
 
 @router.post("/poll-status")
 async def poll_material_statuses():
-    """Query GetAsset for every Processing (or unknown) asset and update the local cache.
+    """Query assets status API for every Processing (or unknown) asset and update the local cache.
 
     Returns:
         statuses: full {asset_id: status} cache
@@ -268,16 +280,18 @@ async def poll_material_statuses():
     to_poll = [aid for aid in asset_ids if cache.get(aid) not in ("Active", "Failed")]
 
     updated: dict = {}
-    cfg = _get_ml_config()
-    if cfg.get("ak") and cfg.get("sk") and to_poll:
+    api_key, _, _ = _get_cfgpu_config()
+
+    if api_key and to_poll:
         for asset_id in to_poll:
             try:
                 result = await _get_asset(asset_id)
-                data = result.get("Result") or result
-                status = data.get("Status")
+                # Extract status from response
+                status = result.get("status") or result.get("Status")
                 if status:
                     cache[asset_id] = status
                     updated[asset_id] = status
+                    print(f"📊 Asset {asset_id} status: {status}")
             except Exception as e:
                 print(f"⚠️ GetAsset failed for {asset_id}: {e}")
 
