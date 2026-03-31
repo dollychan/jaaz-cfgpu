@@ -36,11 +36,9 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const { t } = useTranslation()
 
-  // auto 模式：所有非 text 工具都被选中（派生值，不存入 local state，避免 stale 初始值）
-  // Issue 3.1 + 3.6: 仅对 nonTextTools 判断，与 configs.tsx 默认选中逻辑一致
+  // auto 模式：所有工具（含 text）都被选中（派生值，不存入 local state，避免 stale 初始值）
   const autoMode = useMemo(() => {
-    const nonTextTools = allTools.filter(t => t.type !== 'text')
-    return nonTextTools.length > 0 && nonTextTools.every(t => selectedTools.some(s => s.id === t.id))
+    return allTools.length > 0 && allTools.every(t => selectedTools.some(s => s.id === t.id))
   }, [allTools, selectedTools])
 
   // 按 provider 分组
@@ -167,13 +165,9 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
 
   const handleAutoToggle = (enabled: boolean) => {
     if (enabled) {
-      // 开启 auto：只选中非 text 工具（Issue 3.2: auto 与 text tools 无关）
-      const newSelected = allTools.filter(t => t.type !== 'text')
-      setSelectedTools(newSelected)
-      localStorage.setItem(
-        'disabled_tool_ids',
-        JSON.stringify(allTools.filter(t => t.type === 'text').map(t => t.id))
-      )
+      // 开启 auto：选中所有工具（含 text）
+      setSelectedTools(allTools)
+      localStorage.setItem('disabled_tool_ids', JSON.stringify([]))
     } else {
       // 关闭 auto：只保留第一个 image tool
       const firstImageTool = allTools.find(t => t.type === 'image') ?? null
