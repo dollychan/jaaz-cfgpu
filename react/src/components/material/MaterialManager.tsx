@@ -607,7 +607,6 @@ export default function MaterialManager() {
     uploadInputRef.current?.click()
   }, [])
 
-  /** Copy asset as complete CFGPU API structure for use in chat */
   const [copiedAssetId, setCopiedAssetId] = useState<string | null>(null)
 
   const handleCopyAssetId = useCallback(async (assetId: string, fileType: string, event?: React.MouseEvent) => {
@@ -615,35 +614,9 @@ export default function MaterialManager() {
       event.stopPropagation()
     }
     try {
-      const assetUrl = `asset://${assetId}`
-      let copyData: any
-
-      // Generate complete CFGPU API structure based on file type
-      if (fileType === 'video') {
-        copyData = {
-          type: 'video_url',
-          video_url: { url: assetUrl },
-          role: 'reference_video',
-        }
-      } else if (fileType === 'audio') {
-        copyData = {
-          type: 'audio_url',
-          audio_url: { url: assetUrl },
-          role: 'reference_audio',
-        }
-      } else {
-        // Default to image
-        copyData = {
-          type: 'image_url',
-          image_url: { url: assetUrl },
-          role: 'reference_image',
-        }
-      }
-
-      const copyText = JSON.stringify(copyData, null, 2)
-      await navigator.clipboard.writeText(copyText)
+      await navigator.clipboard.writeText(assetId)
       setCopiedAssetId(assetId)
-      toast.success(`已复制: ${fileType} 引用`, { duration: 2000 })
+      toast.success('已复制 Asset ID', { duration: 2000 })
       setTimeout(() => setCopiedAssetId(null), 2000)
     } catch (err) {
       console.error('Failed to copy asset ID:', err)
