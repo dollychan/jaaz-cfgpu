@@ -1357,9 +1357,38 @@ export default function MaterialManager() {
                         )}
                       </div>
                       <div className="p-3">
-                        <div className="text-xs font-mono text-gray-700 dark:text-gray-300 truncate" title={file.display_name}>
-                          {file.display_name}
-                        </div>
+                        {/* Editable Name row */}
+                        {editingAssetId === file.asset_id ? (
+                          <input
+                            autoFocus
+                            value={editingName}
+                            onChange={(e) => setEditingName(e.target.value)}
+                            onBlur={() => handleRenameConfirm(file.asset_id!, file.name)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault()
+                                handleRenameConfirm(file.asset_id!, file.name)
+                              } else if (e.key === 'Escape') {
+                                setEditingAssetId(null)
+                              }
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-full text-xs border border-blue-400 rounded px-1 py-0.5 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                        ) : (
+                          <div
+                            className="text-xs text-gray-700 dark:text-gray-300 truncate cursor-text hover:text-blue-600 dark:hover:text-blue-400"
+                            title={`${file.name} (点击重命名)`}
+                            onClick={(e) => {
+                              if (!file.asset_id) return
+                              e.stopPropagation()
+                              setEditingAssetId(file.asset_id)
+                              setEditingName(file.name)
+                            }}
+                          >
+                            {file.name}
+                          </div>
+                        )}
                         <div className="flex items-center justify-between mt-1 gap-1">
                           <span className="text-xs text-gray-500">{formatFileSize(file.size)}</span>
                           <div className="flex items-center gap-1">
