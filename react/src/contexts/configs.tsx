@@ -39,7 +39,7 @@ export const ConfigsProvider = ({
 
     // 恢复用户上次的 disabled 工具偏好
     const disabledToolsJson = localStorage.getItem('disabled_tool_ids')
-    let currentSelectedTools: ToolInfo[] = toolList  // 默认全选
+    let currentSelectedTools: ToolInfo[] = []
     if (disabledToolsJson) {
       try {
         const disabledToolIds: string[] = JSON.parse(disabledToolsJson)
@@ -49,6 +49,15 @@ export const ConfigsProvider = ({
       } catch (error) {
         console.error(error)
       }
+    } else {
+      // 默认只选中 media tools（image/video），不自动选中 text tools
+      // text tools 只有在 auto 模式开启时才应该被自动选中
+      currentSelectedTools = toolList.filter(t => t.type !== 'text')
+      // 保存默认选择到 localStorage
+      localStorage.setItem(
+        'disabled_tool_ids',
+        JSON.stringify(toolList.filter(t => t.type === 'text').map(t => t.id))
+      )
     }
 
     setSelectedTools(currentSelectedTools)
