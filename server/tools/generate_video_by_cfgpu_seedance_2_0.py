@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from langchain_core.tools import tool, InjectedToolCallId  # type: ignore
 from langchain_core.runnables import RunnableConfig
 from tools.video_generation.video_generation_core import generate_video_with_provider
+from tools.utils.schema_validators import OptionalStringList
 
 
 class GenerateByCfgpuSeedance2_0InputSchema(BaseModel):
@@ -17,7 +18,7 @@ class GenerateByCfgpuSeedance2_0InputSchema(BaseModel):
         default="16:9",
         description="Optional. The aspect ratio of the video. Allowed values: 16:9, 9:16, 1:1, 4:3, 3:4, 21:9"
     )
-    input_images: Optional[List[str]] = Field(
+    input_images: OptionalStringList = Field(
         default=None,
         description="Optional. Up to 9 reference image file IDs. Usage depends on image_role."
     )
@@ -32,11 +33,11 @@ class GenerateByCfgpuSeedance2_0InputSchema(BaseModel):
             "'reference_image': use 1–9 images as style/content references; compatible with input_videos and input_audios (multimodal)."
         )
     )
-    input_videos: Optional[List[str]] = Field(
+    input_videos: OptionalStringList = Field(
         default=None,
         description="Optional. Up to 3 reference video file IDs for video-to-video or video extension."
     )
-    input_audios: Optional[List[str]] = Field(
+    input_audios: OptionalStringList = Field(
         default=None,
         description="Optional. Up to 3 reference audio file IDs. MUST be used together with input_images or input_videos — audio cannot be the only reference input."
     )

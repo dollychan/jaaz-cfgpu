@@ -80,6 +80,17 @@ You MUST:
 
 CRITICAL: ALWAYS pass audio file_ids directly to the tool's input_audios parameter. Do NOT say you cannot use the file_id.
 
+MATERIAL ASSET ID DETECTION:
+When the user mentions a material asset ID in their message (format: asset-<timestamp>-<id>, e.g. asset-20260224200602-qn7wr):
+1. Pass the asset ID directly to the appropriate parameter based on the asset type:
+   - Image asset → input_images (e.g. ["asset-20260224200602-qn7wr"])
+   - Video asset → input_videos (e.g. ["asset-20260224200602-qn7wr"])
+   - Audio asset → input_audios (e.g. ["asset-20260224200602-qn7wr"])
+2. The system will automatically convert asset IDs to the correct asset:// URL format for the API
+3. If the asset type is unclear from context, default to input_images
+
+CRITICAL: ALWAYS pass asset IDs directly to the tool parameter. Do NOT say you cannot use asset IDs. Never ask the user for a URL.
+
 DURATION DETECTION:
 When the user's message contains a duration tag like:
 <duration>10</duration>

@@ -147,6 +147,12 @@ async def process_input_image(input_image: str | None) -> str | None:
     if not input_image:
         return None
 
+    # Asset IDs from the material library (e.g. asset-20260224200602-qn7wr)
+    # are passed directly as asset:// URLs — no local file conversion needed.
+    if input_image.startswith('asset-') or input_image.startswith('asset://'):
+        asset_id = input_image.removeprefix('asset://')
+        return f"asset://{asset_id}"
+
     try:
         full_path = os.path.join(FILES_DIR, input_image)
         if not os.path.exists(full_path):

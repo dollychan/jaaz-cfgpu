@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from langchain_core.tools import tool, InjectedToolCallId  # type: ignore
 from langchain_core.runnables import RunnableConfig
 from tools.utils.image_generation_core import generate_image_with_provider
+from tools.utils.schema_validators import OptionalStringList
 
 
 class GenerateImageByDoubaoSeedream5_0CfgpuInputSchema(BaseModel):
@@ -13,7 +14,7 @@ class GenerateImageByDoubaoSeedream5_0CfgpuInputSchema(BaseModel):
         default="2K",
         description="Optional. Output image size. Allowed values: 1K, 2K, 4K. Default is 2K."
     )
-    input_images: Optional[list[str]] = Field(
+    input_images: OptionalStringList = Field(
         default=None,
         description="Optional. 1–14 reference image file_ids (e.g. ['im_abc123.png']). "
                     "Use for image-to-image generation: style transfer, character consistency, object editing, etc."

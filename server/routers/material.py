@@ -17,10 +17,33 @@ ALLOWED_TYPES = {
     # Videos
     "video/mp4", "video/webm", "video/quicktime", "video/x-msvideo",
     "video/x-matroska", "video/mpeg",
-    # Audio
-    "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav",
-    "audio/aac", "audio/flac", "audio/x-flac", "audio/m4a",
-    "audio/x-m4a", "audio/ogg", "audio/opus",
+    # Audio — include all common browser/OS variants for MP3 and friends
+    "audio/mpeg", "audio/mp3", "audio/x-mpeg", "audio/mpeg3", "audio/x-mpeg-3",
+    "audio/wav", "audio/x-wav", "audio/wave",
+    "audio/aac", "audio/x-aac",
+    "audio/flac", "audio/x-flac",
+    "audio/m4a", "audio/x-m4a", "audio/mp4",
+    "audio/ogg", "audio/opus",
+}
+
+# Extension → canonical MIME type, used when browser sends
+# application/octet-stream or an unrecognised MIME type.
+_EXT_TO_MIME: dict[str, str] = {
+    ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".png": "image/png", ".gif": "image/gif",
+    ".webp": "image/webp", ".bmp": "image/bmp",
+    ".tiff": "image/tiff", ".tif": "image/tiff",
+    ".heic": "image/heic", ".heif": "image/heif",
+    ".mp4": "video/mp4", ".webm": "video/webm",
+    ".mov": "video/quicktime", ".avi": "video/x-msvideo",
+    ".mkv": "video/x-matroska",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".aac": "audio/aac",
+    ".flac": "audio/flac",
+    ".m4a": "audio/x-m4a",
+    ".ogg": "audio/ogg",
+    ".opus": "audio/opus",
 }
 
 _ASSET_TYPE_MAP = {
@@ -134,6 +157,11 @@ async def _create_asset(public_url: str, asset_type: str, name: str) -> str:
 async def upload_material(file: UploadFile = File(...)):
     _ensure_dir()
     content_type = file.content_type or ""
+    # Some browsers / Electron environments send application/octet-stream or an
+    # unrecognised MIME variant — fall back to extension-based detection.
+    if content_type not in ALLOWED_TYPES:
+        ext = os.path.splitext(file.filename or "")[1].lower()
+        content_type = _EXT_TO_MIME.get(ext, content_type)
     if content_type not in ALLOWED_TYPES:
         raise HTTPException(status_code=400, detail=f"Unsupported file type: {content_type}")
 

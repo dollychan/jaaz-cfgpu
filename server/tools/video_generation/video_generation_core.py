@@ -57,6 +57,13 @@ def _resolve_local_to_server_url(
     """
     if ref.startswith(('http://', 'https://', 'data:')):
         return ref
+    # Asset IDs from the material library (e.g. asset-20260224200602-qn7wr)
+    # are passed as asset:// URLs directly to the API.
+    if ref.startswith('asset://') or ref.startswith('asset-'):
+        asset_id = ref.removeprefix('asset://')
+        asset_url = f"asset://{asset_id}"
+        print(f"🔗 Material asset '{ref}' → {asset_url}")
+        return asset_url
     ref_stem = os.path.splitext(ref)[0]
     for fname in os.listdir(FILES_DIR):
         if fname == ref or os.path.splitext(fname)[0] == ref_stem:
