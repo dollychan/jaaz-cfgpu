@@ -1,6 +1,7 @@
 import { cancelChat } from '@/api/chat'
 import { cancelMagicGenerate } from '@/api/magic'
 import { uploadImage, uploadVideo, uploadAudio } from '@/api/upload'
+import { getMaterialFilesApi, AssetFileRecord } from '@/api/material'
 import { Button } from '@/components/ui/button'
 import { useConfigs } from '@/contexts/configs'
 import {
@@ -11,7 +12,7 @@ import {
 import { cn, dataURLToFile } from '@/lib/utils'
 import { Message, MessageContent, Model } from '@/types/types'
 import { ModelInfo, ToolInfo } from '@/api/model'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { useDrop } from 'ahooks'
 import { produce } from 'immer'
 import {
@@ -25,6 +26,7 @@ import {
   Hash,
   Video,
   Music,
+  Library,
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import Textarea, { TextAreaRef } from 'rc-textarea'
@@ -81,6 +83,10 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
       file_id: string
       width: number
       height: number
+      /** 'local' = uploaded to /api/file, 'asset' = from material library */
+      type: 'local' | 'asset'
+      /** For asset type: /api/material/serve/{disk_name} */
+      serve_path?: string
     }[]
   >([])
   const [isFocused, setIsFocused] = useState(false)
@@ -95,9 +101,24 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
   const MIN_DURATION = 4
   const MAX_DURATION = 15
 
+  // Material asset picker
+  const { data: materialFiles = [] } = useQuery({
+    queryKey: ['material-files'],
+    queryFn: getMaterialFilesApi,
+    staleTime: 30_000,
+  })
+
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [videos, setVideos] = useState<{ file_id: string }[]>([])
-  const [audios, setAudios] = useState<{ file_id: string }[]>([])
+  const [videos, setVideos] = useState<{
+    file_id: string
+    type: 'local' | 'asset'
+    serve_path?: string
+  }[]>([])
+  const [audios, setAudios] = useState<{
+    file_id: string
+    type: 'local' | 'asset'
+    serve_path?: string
+  }[]>([])
 
   // 充值按钮组件
   const RechargeContent = useCallback(() => (
@@ -133,6 +154,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
           file_id: data.file_id,
           width: data.width,
           height: data.height,
+          type: 'local',
         },
       ])
     },
@@ -147,7 +169,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
   const { mutate: uploadVideoMutation } = useMutation({
     mutationFn: (file: File) => uploadVideo(file),
     onSuccess: (data) => {
-      setVideos((prev) => [...prev, { file_id: data.file_id }])
+      setVideos((prev) => [...prev, { file_id: data.file_id, type: 'local' }])
     },
     onError: (error) => {
       console.error('🎥 uploadVideoMutation onError', error)
@@ -160,7 +182,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
   const { mutate: uploadAudioMutation } = useMutation({
     mutationFn: (file: File) => uploadAudio(file),
     onSuccess: (data) => {
-      setAudios((prev) => [...prev, { file_id: data.file_id }])
+      setAudios((prev) => [...prev, { file_id: data.file_id, type: 'local' }])
     },
     onError: (error) => {
       console.error('🎵 uploadAudioMutation onError', error)
@@ -258,7 +280,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
     if (images.length > 0) {
       text_content += `\n\n<input_images count="${images.length}">`
       images.forEach((image, index) => {
-        text_content += `\n<image index="${index + 1}" file_id="${image.file_id}" width="${image.width}" height="${image.height}" />`
+        text_content += `\n<image index="${index + 1}" file_id="${image.file_id}" type="${image.type}" width="${image.width}" height="${image.height}" />`
       })
       text_content += `\n</input_images>`
     }
@@ -266,7 +288,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
     if (videos.length > 0) {
       text_content += `\n\n<input_videos count="${videos.length}">`
       videos.forEach((video, index) => {
-        text_content += `\n<video index="${index + 1}" file_id="${video.file_id}" />`
+        text_content += `\n<video index="${index + 1}" file_id="${video.file_id}" type="${video.type}" />`
       })
       text_content += `\n</input_videos>`
     }
@@ -274,15 +296,20 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
     if (audios.length > 0) {
       text_content += `\n\n<input_audios count="${audios.length}">`
       audios.forEach((audio, index) => {
-        text_content += `\n<audio index="${index + 1}" file_id="${audio.file_id}" />`
+        text_content += `\n<audio index="${index + 1}" file_id="${audio.file_id}" type="${audio.type}" />`
       })
       text_content += `\n</input_audios>`
     }
 
     // Fetch images as base64; skip any that fail to load
+    // - type='local'  → /api/file/{file_id}
+    // - type='asset'  → serve_path (/api/material/serve/{disk_name})
     const imagePromises = images.map(async (image) => {
       try {
-        const response = await fetch(`/api/file/${image.file_id}`)
+        const url = image.type === 'asset' && image.serve_path
+          ? image.serve_path
+          : `/api/file/${image.file_id}`
+        const response = await fetch(url)
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
         const blob = await response.blob()
         return await new Promise<string>((resolve, reject) => {
@@ -345,6 +372,44 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
     RechargeContent,
   ])
 
+  // Add an asset from the material library to the chat
+  const addAssetToChat = useCallback(async (rec: AssetFileRecord) => {
+    if (!rec.disk_name || !rec.serve_url) {
+      toast.error('Asset file not available on disk')
+      return
+    }
+    const servePath = rec.serve_url
+    const ftype = rec.file_type ?? 'image'
+    if (ftype === 'image') {
+      // Try to get image dimensions
+      let width = 0
+      let height = 0
+      try {
+        await new Promise<void>((resolve) => {
+          const img = new window.Image()
+          img.onload = () => { width = img.naturalWidth; height = img.naturalHeight; resolve() }
+          img.onerror = () => resolve()
+          img.src = servePath
+        })
+      } catch { /* ignore */ }
+      setImages((prev) => [
+        ...prev,
+        { file_id: rec.asset_id, width, height, type: 'asset', serve_path: servePath },
+      ])
+    } else if (ftype === 'video') {
+      setVideos((prev) => [
+        ...prev,
+        { file_id: rec.asset_id, type: 'asset', serve_path: servePath },
+      ])
+    } else if (ftype === 'audio') {
+      setAudios((prev) => [
+        ...prev,
+        { file_id: rec.asset_id, type: 'asset', serve_path: servePath },
+      ])
+    }
+    textareaRef.current?.focus()
+  }, [])
+
   // Drop Area
   const dropAreaRef = useRef<HTMLDivElement>(null)
   const [isDragOver, setIsDragOver] = useState(false)
@@ -402,6 +467,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
                 file_id: image.fileId,
                 width: image.width,
                 height: image.height,
+                type: 'local',
               })
             })
           )
@@ -414,8 +480,8 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
     const handleMaterialAddImagesToChat = async (
       data: TMaterialAddImagesToChatEvent
     ) => {
+      // Legacy event from MaterialManager — re-upload as local file
       data.forEach(async (image: TMaterialAddImagesToChatEvent[0]) => {
-        // Convert file path to blob and upload
         try {
           const fileUrl = `/api/serve_file?file_path=${encodeURIComponent(image.filePath)}`
           const response = await fetch(fileUrl)
@@ -539,7 +605,11 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
               >
                 <img
                   key={image.file_id}
-                  src={`/api/file/${image.file_id}`}
+                  src={
+                    image.type === 'asset' && image.serve_path
+                      ? image.serve_path
+                      : `/api/file/${image.file_id}`
+                  }
                   alt="Uploaded image"
                   className="w-full h-full object-cover rounded-md"
                   draggable={false}
@@ -674,6 +744,43 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
           >
             <PlusIcon className="size-4" />
           </Button>
+
+          {/* Material library asset picker */}
+          {materialFiles.length > 0 && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Library className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56 max-h-72 overflow-y-auto">
+                {materialFiles
+                  .filter((r) => r.disk_name && r.serve_url && r.status === 'Active')
+                  .map((rec) => (
+                    <DropdownMenuItem
+                      key={rec.asset_id}
+                      onClick={() => addAssetToChat(rec)}
+                      className="flex items-center gap-2"
+                    >
+                      {rec.file_type === 'image' && (
+                        <img
+                          src={rec.serve_url!}
+                          alt={rec.name}
+                          className="size-6 rounded object-cover shrink-0"
+                        />
+                      )}
+                      {rec.file_type === 'video' && (
+                        <Video className="size-4 shrink-0 text-muted-foreground" />
+                      )}
+                      {rec.file_type === 'audio' && (
+                        <Music className="size-4 shrink-0 text-muted-foreground" />
+                      )}
+                      <span className="truncate text-sm">{rec.name}</span>
+                    </DropdownMenuItem>
+                  ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
 
           <ModelSelectorV3 />
 
