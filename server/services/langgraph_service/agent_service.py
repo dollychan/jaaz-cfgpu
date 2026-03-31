@@ -116,9 +116,16 @@ async def langgraph_multi_agent(
         print('👇last_agent', last_agent)
 
         # 4. 创建智能体群组
+        # When agent_mode is on, always start with planner (first agent) so that
+        # every new user message goes through write_plan first, regardless of which
+        # agent was active at the end of the previous turn.
+        if agent_mode:
+            starting_agent = agent_names[0]  # always 'planner'
+        else:
+            starting_agent = last_agent if last_agent else agent_names[0]
         swarm = create_swarm(
             agents=agents,  # type: ignore
-            default_active_agent=last_agent if last_agent else agent_names[0]
+            default_active_agent=starting_agent
         )
 
         # 5. 创建上下文
