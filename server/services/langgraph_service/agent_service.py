@@ -103,11 +103,15 @@ def _create_text_model(text_model: ModelInfo) -> Any:
 
 
 def _create_builtin_model() -> Optional[Any]:
-    """从 settings 中读取并创建内置编排模型实例
+    """从 settings + config.toml 读取并创建内置编排模型实例
 
-    内置模型是 react agent 的大脑，负责理解用户意图、分发任务给各类工具。
-    配置项在 settings.json 的 builtin_model 字段中。
-    如果未配置，返回 None（调用方需做 fallback 处理）。
+    优先级：
+    1. settings.json builtin_model.provider / model / api_key / url
+    2. model / api_key / url 为空时，从 config.toml 对应 provider 的配置中补全
+       - model 为空：取 config.toml 该 provider 下第一个 type='text' 的 model
+       - api_key 为空：取 config.toml 该 provider 的 api_key
+       - url 为空：取 config.toml 该 provider 的 url
+    3. 仍无法解析 provider/model 则返回 None，调用方 fallback 到用户选择的 text tool
     """
     raw_settings = settings_service.get_raw_settings()
     builtin_config = raw_settings.get('builtin_model', {})
@@ -117,17 +121,28 @@ def _create_builtin_model() -> Optional[Any]:
     url = builtin_config.get('url', '').strip()
     api_key = builtin_config.get('api_key', '').strip()
 
-    if not provider or not model:
-        print("⚠️ builtin_model 未配置，将 fallback 到用户选择的 text model tool 作为编排器")
+    if not provider:
+        print("⚠️ builtin_model 未配置 provider，将 fallback 到用户选择的 text model tool 作为编排器")
+        return None
+
+    # 从 config.toml 对应 provider 配置中补全缺失字段
+    provider_config = config_service.app_config.get(provider, {})
+    if not api_key:
+        api_key = provider_config.get('api_key', '').strip()
+    if not url:
+        url = provider_config.get('url', '').strip()
+    if not model:
+        # 取该 provider 下第一个 type='text' 的 model
+        for model_name, model_cfg in provider_config.get('models', {}).items():
+            if model_cfg.get('type') == 'text':
+                model = model_name
+                break
+
+    if not model:
+        print(f"⚠️ builtin_model provider={provider} 下未找到 text model，将 fallback 到用户选择的 text model tool")
         return None
 
     print(f"🤖 使用内置编排模型: {provider}/{model}")
-
-    # api_key 和 url 优先用 settings 中的值，其次 fallback 到 config.toml
-    if not api_key:
-        api_key = config_service.app_config.get(provider, {}).get('api_key', '')
-    if not url:
-        url = config_service.app_config.get(provider, {}).get('url', '')
 
     model_info: ModelInfo = {
         'provider': provider,

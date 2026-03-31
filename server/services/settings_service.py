@@ -39,9 +39,10 @@ DEFAULT_SETTINGS = {
     "enabled_knowledge_data": [],  # 启用的知识库完整数据列表
     # 内置编排模型：无需用户在对话界面选择，由 server 端配置
     # 作为 react agent 的大脑，负责理解用户意图、分发任务给各类工具
-    # provider/model/url/api_key 均可留空，此时 fallback 到用户选择的 text model tool
+    # provider 默认 cfgpu；model 和 api_key 留空时从 config.toml 对应 provider 配置中读取
+    # 若 provider/model 最终均无法解析，则 fallback 到用户选择的 text model tool
     "builtin_model": {
-        "provider": "",
+        "provider": "cfgpu",
         "model": "",
         "url": "",
         "api_key": ""
