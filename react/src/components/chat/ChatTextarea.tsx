@@ -226,17 +226,17 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
       return
     }
 
-    if (!textModel) {
-      toast.error(t('chat:textarea.selectModel'))
-      /*by Liu Chen
-      *if (!authStatus.is_logged_in) {
-        setShowLoginDialog(true)
-      }*/
+    // Check that at least one model/tool is selected
+    if (!textModel && (!selectedTools || selectedTools.length === 0)) {
+      toast.error(t('chat:textarea.selectModelOrTool', 'Please select at least one model or tool'))
       return
     }
 
     if (!selectedTools || selectedTools.length === 0) {
-      toast.warning(t('chat:textarea.selectTool'))
+      // Tool is optional, just show warning if not selected but text model exists
+      if (textModel) {
+        toast.warning(t('chat:textarea.selectTool'))
+      }
     }
 
     let text_content: MessageContent[] | string = prompt
@@ -852,7 +852,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
             variant="default"
             size="icon"
             onClick={handleSendPrompt}
-            disabled={!textModel || !selectedTools || prompt.length === 0}
+            disabled={(!textModel && !selectedTools?.length) || prompt.length === 0}
           >
             <ArrowUp className="size-4" />
           </Button>

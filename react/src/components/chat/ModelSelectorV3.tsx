@@ -88,14 +88,43 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
 
   const handleModelToggle = (modelKey: string, checked: boolean) => {
     if (activeTab === 'text') {
-      // Text models are single select
-      const model = textModels?.find((m) => m.provider + ':' + m.model === modelKey)
-      if (model) {
-        setTextModel(model)
-        localStorage.setItem('text_model', modelKey)
+      // Text models are single select, optional
+      if (checked) {
+        const model = textModels?.find((m) => m.provider + ':' + m.model === modelKey)
+        if (model) {
+          setTextModel(model)
+          localStorage.setItem('text_model', modelKey)
+        }
+      } else {
+        // Allow unselecting text model (make it optional)
+        setTextModel(undefined)
+        localStorage.removeItem('text_model')
+      }
+    } else if (!autoMode) {
+      // Non-auto mode: only one tool service allowed
+      // When selecting a tool, clear all others
+      if (checked) {
+        const tool = allTools.find((m) => m.provider + ':' + m.id === modelKey)
+        if (tool) {
+          // Only keep the selected tool, clear all others
+          setSelectedTools([tool])
+          localStorage.setItem(
+            'disabled_tool_ids',
+            JSON.stringify(
+              allTools.filter((t) => t.id !== tool.id).map((t) => t.id)
+            )
+          )
+        }
+      } else {
+        // Deselect: clear selection
+        setSelectedTools([])
+        localStorage.setItem(
+          'disabled_tool_ids',
+          JSON.stringify(allTools.map((t) => t.id))
+        )
       }
     } else {
-      // Image and video models are multi select
+      // Auto mode: multi-select (keep existing behavior)
       let newSelected: ToolInfo[] = []
       const tool = allTools.find((m) => m.provider + ':' + m.id === modelKey)
 
@@ -126,18 +155,39 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
 
   const handleModelClick = (modelKey: string) => {
     if (activeTab === 'text') {
-      // Text models: always single select, no auto mode
-      const model = textModels?.find((m) => m.provider + ':' + m.model === modelKey)
-      if (model) {
-        setTextModel(model)
-        localStorage.setItem('text_model', modelKey)
-        onModelToggle?.(modelKey, true)
+      // Text models: toggle select, no auto mode
+      const isSelected = textModel?.provider + ':' + textModel?.model === modelKey
+      if (isSelected) {
+        // Deselect text model
+        setTextModel(undefined)
+        localStorage.removeItem('text_model')
+      } else {
+        // Select text model
+        const model = textModels?.find((m) => m.provider + ':' + m.model === modelKey)
+        if (model) {
+          setTextModel(model)
+          localStorage.setItem('text_model', modelKey)
+          onModelToggle?.(modelKey, true)
+        }
       }
+    } else if (autoMode) {
+      // Auto mode: toggle selection or switch if only one per service
+      const isSelected = selectedTools.some(t => t.provider + ':' + t.id === modelKey)
+      handleModelToggle(modelKey, !isSelected)
     } else {
-      // Image and video models
-      if (autoMode) {
-        // 如果当前是auto模式，切换到非auto模式并只选中点击的模型
-        setAutoMode(false)
+      // Non-auto mode: single tool selection across all types
+      // Clear all selections from other service types, keep only the clicked one
+      const isAlreadySelected = selectedTools.some(t => t.provider + ':' + t.id === modelKey)
+
+      if (isAlreadySelected) {
+        // Deselect current
+        setSelectedTools([])
+        localStorage.setItem(
+          'disabled_tool_ids',
+          JSON.stringify(allTools.map((t) => t.id))
+        )
+      } else {
+        // Select this one, deselect all others
         const tool = allTools.find((m) => m.provider + ':' + m.id === modelKey)
         if (tool) {
           setSelectedTools([tool])
@@ -149,10 +199,6 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
           )
           onModelToggle?.(modelKey, true)
         }
-      } else {
-        // 非auto模式，切换当前模型的选中状态
-        const isSelected = selectedTools.some(t => t.provider + ':' + t.id === modelKey)
-        handleModelToggle(modelKey, !isSelected)
       }
     }
   }
@@ -168,25 +214,22 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
       setSelectedTools(allTools)
       localStorage.setItem('disabled_tool_ids', JSON.stringify([]))
     } else {
-      // 关闭auto模式时，默认选中image和video的第一个工具
+      // 关闭auto模式时，只选中image类型的第一个工具
       const imageTools = allTools.filter(tool => tool.type === 'image')
-      const videoTools = allTools.filter(tool => tool.type === 'video')
-
       const firstImageTool = imageTools.length > 0 ? imageTools[0] : null
-      const firstVideoTool = videoTools.length > 0 ? videoTools[0] : null
 
-      const selectedToolsList: ToolInfo[] = []
-      if (firstImageTool) selectedToolsList.push(firstImageTool)
-      if (firstVideoTool) selectedToolsList.push(firstVideoTool)
-
-      if (selectedToolsList.length > 0) {
-        setSelectedTools(selectedToolsList)
+      if (firstImageTool) {
+        setSelectedTools([firstImageTool])
         localStorage.setItem(
           'disabled_tool_ids',
           JSON.stringify(
-            allTools.filter((t) => !selectedToolsList.includes(t)).map((t) => t.id)
+            allTools.filter((t) => t.id !== firstImageTool.id).map((t) => t.id)
           )
         )
+      } else {
+        // No tools available, clear selection
+        setSelectedTools([])
+        localStorage.setItem('disabled_tool_ids', JSON.stringify(allTools.map(t => t.id)))
       }
     }
     setAutoMode(enabled)
