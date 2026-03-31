@@ -584,18 +584,43 @@ export default function MaterialManager() {
     uploadInputRef.current?.click()
   }, [])
 
-  /** Copy asset ID to clipboard with "asset://" prefix for use in chat */
+  /** Copy asset as complete CFGPU API structure for use in chat */
   const [copiedAssetId, setCopiedAssetId] = useState<string | null>(null)
-  
-  const handleCopyAssetId = useCallback(async (assetId: string, event?: React.MouseEvent) => {
+
+  const handleCopyAssetId = useCallback(async (assetId: string, fileType: string, event?: React.MouseEvent) => {
     if (event) {
       event.stopPropagation()
     }
-    const assetUrl = `asset://${assetId}`
     try {
-      await navigator.clipboard.writeText(assetUrl)
+      const assetUrl = `asset://${assetId}`
+      let copyData: any
+
+      // Generate complete CFGPU API structure based on file type
+      if (fileType === 'video') {
+        copyData = {
+          type: 'video_url',
+          video_url: { url: assetUrl },
+          role: 'reference_video',
+        }
+      } else if (fileType === 'audio') {
+        copyData = {
+          type: 'audio_url',
+          audio_url: { url: assetUrl },
+          role: 'reference_audio',
+        }
+      } else {
+        // Default to image
+        copyData = {
+          type: 'image_url',
+          image_url: { url: assetUrl },
+          role: 'reference_image',
+        }
+      }
+
+      const copyText = JSON.stringify(copyData, null, 2)
+      await navigator.clipboard.writeText(copyText)
       setCopiedAssetId(assetId)
-      toast.success(`已复制: ${assetUrl}`, { duration: 2000 })
+      toast.success(`已复制: ${fileType} 引用`, { duration: 2000 })
       setTimeout(() => setCopiedAssetId(null), 2000)
     } catch (err) {
       console.error('Failed to copy asset ID:', err)
@@ -750,10 +775,10 @@ export default function MaterialManager() {
         <div key={item.path} className={`select-none`}>
           <div
             className={`flex items-center gap-2 px-3 py-1 rounded-lg cursor-pointer transition-all duration-200 hover:bg-gray-100 dark:hover:bg-gray-800 ${selectedFolder?.path === item.path && item.is_directory
-                ? 'bg-blue-50 dark:bg-blue-950 border-l-4 border-blue-500'
-                : item.is_media && !item.is_directory
-                  ? 'hover:bg-green-50 dark:hover:bg-green-950'
-                  : ''
+              ? 'bg-blue-50 dark:bg-blue-950 border-l-4 border-blue-500'
+              : item.is_media && !item.is_directory
+                ? 'hover:bg-green-50 dark:hover:bg-green-950'
+                : ''
               }`}
             style={{ paddingLeft: `${12 + depth * 16}px` }}
             onClick={() =>
@@ -830,8 +855,8 @@ export default function MaterialManager() {
           <div
             key={file.path}
             className={`group relative bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border cursor-pointer ${selectedFile?.path === file.path
-                ? 'border-blue-500 ring-2 ring-blue-200 dark:ring-blue-800'
-                : 'border-gray-200 dark:border-gray-700'
+              ? 'border-blue-500 ring-2 ring-blue-200 dark:ring-blue-800'
+              : 'border-gray-200 dark:border-gray-700'
               }`}
             onClick={() => handleFileClick(file)}
           >
@@ -901,8 +926,8 @@ export default function MaterialManager() {
           <div
             key={file.path}
             className={`flex items-center gap-4 p-3 bg-white dark:bg-gray-800 rounded-lg border hover:shadow-md transition-shadow min-w-0 cursor-pointer ${selectedFile?.path === file.path
-                ? 'border-blue-500 ring-2 ring-blue-200 dark:ring-blue-800'
-                : 'border-gray-200 dark:border-gray-700'
+              ? 'border-blue-500 ring-2 ring-blue-200 dark:ring-blue-800'
+              : 'border-gray-200 dark:border-gray-700'
               }`}
             onClick={() => handleFileClick(file)}
           >
@@ -1288,9 +1313,9 @@ export default function MaterialManager() {
                         {/* Copy Asset ID button - only show for assets with asset_id */}
                         {file.asset_id && file.status === 'Active' && (
                           <button
-                            onClick={(e) => handleCopyAssetId(file.asset_id!, e)}
+                            onClick={(e) => handleCopyAssetId(file.asset_id!, file.type, e)}
                             className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 rounded-lg transition-colors"
-                            title={`复制 Asset ID：asset://${file.asset_id}`}
+                            title={`复制为 ${file.type === 'video' ? 'video_url' : file.type === 'audio' ? 'audio_url' : 'image_url'} 结构`}
                           >
                             {copiedAssetId === file.asset_id ? (
                               <Check className="w-4 h-4 text-green-400" />
@@ -1318,9 +1343,9 @@ export default function MaterialManager() {
                             <StatusBadge status={file.status} />
                             {file.asset_id && file.status === 'Active' && (
                               <button
-                                onClick={(e) => handleCopyAssetId(file.asset_id!, e)}
+                                onClick={(e) => handleCopyAssetId(file.asset_id!, file.type, e)}
                                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
-                                title={`复制引用：asset://${file.asset_id}`}
+                                title={`复制为 ${file.type === 'video' ? 'video_url' : file.type === 'audio' ? 'audio_url' : 'image_url'} 结构`}
                               >
                                 {copiedAssetId === file.asset_id ? (
                                   <Check className="w-3 h-3 text-green-500" />

@@ -81,15 +81,28 @@ You MUST:
 CRITICAL: ALWAYS pass audio file_ids directly to the tool's input_audios parameter. Do NOT say you cannot use the file_id.
 
 MATERIAL ASSET ID DETECTION:
-When the user mentions a material asset ID in their message (format: asset-<timestamp>-<id>, e.g. asset-20260224200602-qn7wr):
-1. Pass the asset ID directly to the appropriate parameter based on the asset type:
-   - Image asset → input_images (e.g. ["asset-20260224200602-qn7wr"])
-   - Video asset → input_videos (e.g. ["asset-20260224200602-qn7wr"])
-   - Audio asset → input_audios (e.g. ["asset-20260224200602-qn7wr"])
-2. The system will automatically convert asset IDs to the correct asset:// URL format for the API
-3. If the asset type is unclear from context, default to input_images
+When the user pastes a material asset in their message with CFGPU API structure:
+```json
+{
+  "type": "image_url",
+  "image_url": {"url": "asset://asset-20260224200602-qn7wr"},
+  "role": "reference_image"
+}
+```
 
-CRITICAL: ALWAYS pass asset IDs directly to the tool parameter. Do NOT say you cannot use asset IDs. Never ask the user for a URL.
+You MUST:
+1. Parse the JSON structure to extract:
+   - The asset URL from image_url.url, video_url.url, or audio_url.url
+   - The type: "image_url" → input_images, "video_url" → input_videos, "audio_url" → input_audios
+2. Pass the extracted asset URL directly to the appropriate parameter:
+   - image_url structure → input_images parameter
+   - video_url structure → input_videos parameter
+   - audio_url structure → input_audios parameter
+3. Example: If user pastes image_url structure, extract "asset://asset-20260224200602-qn7wr" and pass to input_images as ["asset://asset-20260224200602-qn7wr"]
+
+The system will automatically handle asset:// URLs for the API.
+
+CRITICAL: ALWAYS extract and pass the asset URL directly to the correct parameter based on the structure type. Do NOT say you cannot use asset IDs. Never ask the user for a URL.
 
 DURATION DETECTION:
 When the user's message contains a duration tag like:
