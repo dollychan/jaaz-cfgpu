@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -36,9 +36,12 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const { t } = useTranslation()
 
-  // auto 模式：所有工具都被选中（包括 text 和 media）
-  const initialAutoMode = allTools.length > 0 && allTools.every(t => selectedTools.some(s => s.id === t.id))
-  const [autoMode, setAutoMode] = useState(initialAutoMode)
+  // auto 模式：所有非 text 工具都被选中（派生值，不存入 local state，避免 stale 初始值）
+  // Issue 3.1 + 3.6: 仅对 nonTextTools 判断，与 configs.tsx 默认选中逻辑一致
+  const autoMode = useMemo(() => {
+    const nonTextTools = allTools.filter(t => t.type !== 'text')
+    return nonTextTools.length > 0 && nonTextTools.every(t => selectedTools.some(s => s.id === t.id))
+  }, [allTools, selectedTools])
 
   // 按 provider 分组
   const groupByProvider = (tools: ToolInfo[]) => {
@@ -76,7 +79,7 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
 
   /** Text 类工具：单选（只允许一个 text tool 同时选中），与 media tools 互斥 */
   const handleTextToolClick = (modelKey: string) => {
-    // Auto 模式下点击 → 切到非 auto，只选中该 text tool
+    // Auto 模式下点击 → 只选中该 text tool（autoMode 是派生值，自动更新）
     if (autoMode) {
       const tool = allTools.find(t => toKey(t) === modelKey)
       if (!tool) return
@@ -86,7 +89,6 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
         'disabled_tool_ids',
         JSON.stringify(allTools.filter(t => !newSelected.includes(t)).map(t => t.id))
       )
-      setAutoMode(false)
       onAutoToggle?.(false)
       onModelToggle?.(modelKey, true)
       return
@@ -94,11 +96,12 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
 
     const alreadySelected = isModelSelected(modelKey)
     if (alreadySelected) {
-      // 取消选中
-      setSelectedTools(selectedTools.filter(t => toKey(t) !== modelKey))
+      // 取消选中 — 使用 newSelected 计算 disabled，避免读取 stale state（Issue 3.4）
+      const newSelected = selectedTools.filter(t => toKey(t) !== modelKey)
+      setSelectedTools(newSelected)
       localStorage.setItem(
         'disabled_tool_ids',
-        JSON.stringify([...allTools.filter(t => toKey(t) !== modelKey || !isModelSelected(toKey(t))).map(t => t.id)])
+        JSON.stringify(allTools.filter(t => !newSelected.some(s => s.id === t.id)).map(t => t.id))
       )
     } else {
       // 选中该 text tool，清除所有其他工具（text 和 media 互斥）
@@ -117,7 +120,7 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
   /** Image/Video 工具 click 处理，与 text tools 互斥 */
   const handleMediaToolClick = (modelKey: string) => {
     if (autoMode) {
-      // Auto 模式下点击 → 切到非 auto，只选中该工具（清除 text tools）
+      // Auto 模式下点击 → 只选中该工具（autoMode 是派生值，自动更新）
       const tool = allTools.find(t => toKey(t) === modelKey)
       if (!tool) return
       const newSelected = [tool]
@@ -126,7 +129,6 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
         'disabled_tool_ids',
         JSON.stringify(allTools.filter(t => !newSelected.includes(t)).map(t => t.id))
       )
-      setAutoMode(false)
       onAutoToggle?.(false)
       onModelToggle?.(modelKey, true)
     } else {
@@ -164,24 +166,24 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
   }
 
   const handleAutoToggle = (enabled: boolean) => {
-    if (activeTab === 'text') return  // text 类不支持 auto 模式
-
     if (enabled) {
-      // 开启 auto：选中所有工具（包括 text 和 media tools）
-      const newSelected = allTools
+      // 开启 auto：只选中非 text 工具（Issue 3.2: auto 与 text tools 无关）
+      const newSelected = allTools.filter(t => t.type !== 'text')
       setSelectedTools(newSelected)
-      localStorage.setItem('disabled_tool_ids', JSON.stringify([]))
+      localStorage.setItem(
+        'disabled_tool_ids',
+        JSON.stringify(allTools.filter(t => t.type === 'text').map(t => t.id))
+      )
     } else {
-      // 关闭 auto：只保留第一个 image tool，清除 text tools
-      const imageTools = allTools.filter(t => t.type === 'image')
-      const firstImageTool = imageTools[0] ?? null
+      // 关闭 auto：只保留第一个 image tool
+      const firstImageTool = allTools.find(t => t.type === 'image') ?? null
       const newSelected = firstImageTool ? [firstImageTool] : []
       setSelectedTools(newSelected)
-      localStorage.setItem('disabled_tool_ids', JSON.stringify(
-        allTools.filter(t => !newSelected.includes(t)).map(t => t.id)
-      ))
+      localStorage.setItem(
+        'disabled_tool_ids',
+        JSON.stringify(allTools.filter(t => !newSelected.includes(t)).map(t => t.id))
+      )
     }
-    setAutoMode(enabled)
     onAutoToggle?.(enabled)
   }
 
@@ -218,7 +220,6 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
             <Switch
               checked={autoMode}
               onCheckedChange={handleAutoToggle}
-              disabled={activeTab === 'text'}
             />
           </div>
         </div>

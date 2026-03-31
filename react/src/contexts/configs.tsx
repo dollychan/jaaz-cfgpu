@@ -1,7 +1,7 @@
 import { listModels, ToolInfo } from '@/api/model'
 import useConfigsStore from '@/stores/configs'
 import { useQuery } from '@tanstack/react-query'
-import { createContext, useContext, useEffect } from 'react'
+import { createContext, useContext, useEffect, useRef } from 'react'
 
 export const ConfigsContext = createContext<{
   configsStore: typeof useConfigsStore
@@ -30,12 +30,20 @@ export const ConfigsProvider = ({
     refetchOnMount: true,
   })
 
+  // Issue 3.5: 用 ref 记录上次 toolList 的 id 集合签名，避免 window focus refetch
+  // 每次都重算 selectedTools（覆盖用户在内存中的操作）
+  const prevToolsKeyRef = useRef<string>('')
+
   useEffect(() => {
     if (!modelList) return
     // tools 现在包含 text / image / video 三类
     const { tools: toolList = [] } = modelList
 
+    // 仅在 tool 列表实际发生变化时重算 selectedTools
+    const toolsKey = JSON.stringify(toolList.map(t => t.id).sort())
     setAllTools(toolList)
+    if (toolsKey === prevToolsKeyRef.current) return
+    prevToolsKeyRef.current = toolsKey
 
     // 恢复用户上次的 disabled 工具偏好
     const disabledToolsJson = localStorage.getItem('disabled_tool_ids')
@@ -51,7 +59,6 @@ export const ConfigsProvider = ({
       }
     } else {
       // 默认只选中 media tools（image/video），不自动选中 text tools
-      // text tools 只有在 auto 模式开启时才应该被自动选中
       currentSelectedTools = toolList.filter(t => t.type !== 'text')
       // 保存默认选择到 localStorage
       localStorage.setItem(
