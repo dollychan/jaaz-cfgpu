@@ -860,7 +860,7 @@ export default function MaterialManager() {
               {/* Model Badge for PNG images */}
               <ImageModelBadge filePath={file.path} fileName={file.name} />
 
-              {file.file_type === 'image' ? (
+              {file.type === 'image' ? (
                 <img
                   src={getFileServiceUrl(file.path)}
                   alt={file.name}
@@ -872,14 +872,14 @@ export default function MaterialManager() {
                     )
                   }}
                 />
-              ) : file.file_type === 'video' ? (
+              ) : file.type === 'video' ? (
                 <VideoThumbnail
                   src={getFileServiceUrl(file.path)}
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                 />
               ) : (
                 <div className="flex flex-col items-center justify-center text-gray-400">
-                  {getFileIcon(file.file_type, 'w-8 h-8')}
+                  {getFileIcon(file.type, 'w-8 h-8')}
                   <span className="text-xs mt-1">
                     {file.type.toUpperCase()}
                   </span>
@@ -940,7 +940,7 @@ export default function MaterialManager() {
                   </div>
                 )}
 
-              {file.file_type === 'image' ? (
+              {file.type === 'image' ? (
                 <img
                   src={getFileServiceUrl(file.path)}
                   alt={file.name}
@@ -952,7 +952,7 @@ export default function MaterialManager() {
                     )
                   }}
                 />
-              ) : file.file_type === 'video' ? (
+              ) : file.type === 'video' ? (
                 <VideoThumbnail
                   src={getFileServiceUrl(file.path)}
                   className="w-full h-full object-cover"
@@ -1290,7 +1290,7 @@ export default function MaterialManager() {
                           />
                         ) : file.file_type === 'video' ? (
                           <VideoThumbnail
-                            src={getFileServiceUrl(file.path)}
+                            src={file.url}
                             className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                           />
                         ) : file.file_type === 'audio' ? (
