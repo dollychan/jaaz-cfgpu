@@ -234,22 +234,20 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         return
       }
 
-      const existToolCall = messages.find(
-        (m) =>
-          m.role === 'assistant' &&
-          m.tool_calls &&
-          m.tool_calls.find((t) => t.id == data.id)
-      )
-
-      if (existToolCall) {
-        return
-      }
-
-      console.log('👇tool_call_pending_confirmation event get', data)
-      setPending('tool')
-      setMessages(
-        produce((prev) => {
-          prev.push(
+      // Use functional update so the duplicate check reads the latest state,
+      // not a stale closure value — same pattern as handleToolCall.
+      // Stale-closure duplicate check lets the same tool_call_id get pushed
+      // twice before React re-renders, causing key collisions → insertBefore crash.
+      setMessages((prev) => {
+        const exists = prev.some(
+          (m) =>
+            m.role === 'assistant' &&
+            m.tool_calls?.some((t) => t.id === data.id)
+        )
+        if (exists) return prev
+        console.log('👇tool_call_pending_confirmation event get', data)
+        return produce(prev, (draft) => {
+          draft.push(
             ensureMessageUid({
               role: 'assistant',
               content: '',
@@ -266,7 +264,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             })
           )
         })
-      )
+      })
+      setPending('tool')
 
       setPendingToolConfirmations(
         produce((prev) => {
