@@ -23,6 +23,8 @@ import {
   MessageCirclePlus,
   Upload,
   Library,
+  Copy,
+  Check,
 } from 'lucide-react'
 import { useState, useEffect, useCallback, useRef, memo } from 'react'
 import {
@@ -100,8 +102,8 @@ VideoThumbnail.displayName = 'VideoThumbnail'
 // Status badge for volcengine material library assets
 const STATUS_STYLES: Record<string, string> = {
   Processing: 'bg-yellow-100 text-yellow-800 border-yellow-300 dark:bg-yellow-900/40 dark:text-yellow-300 dark:border-yellow-700',
-  Active:     'bg-green-100 text-green-800 border-green-300 dark:bg-green-900/40 dark:text-green-300 dark:border-green-700',
-  Failed:     'bg-red-100 text-red-800 border-red-300 dark:bg-red-900/40 dark:text-red-300 dark:border-red-700',
+  Active: 'bg-green-100 text-green-800 border-green-300 dark:bg-green-900/40 dark:text-green-300 dark:border-green-700',
+  Failed: 'bg-red-100 text-red-800 border-red-300 dark:bg-red-900/40 dark:text-red-300 dark:border-red-700',
 }
 const StatusBadge = memo(({ status }: { status?: string | null }) => {
   if (!status) return null
@@ -562,8 +564,43 @@ export default function MaterialManager() {
     pollAndMergeStatuses()
   }, [loadMaterialFiles, pollAndMergeStatuses])
 
+  // Auto-poll for Processing assets every 5 seconds
+  useEffect(() => {
+    // Only poll when on materialLibrary tab
+    if (activeTab !== 'materialLibrary') return
+
+    // Check if there are any Processing assets
+    const hasProcessing = materialFiles.some(f => f.status === 'Processing')
+    if (!hasProcessing) return
+
+    const interval = setInterval(() => {
+      pollAndMergeStatuses()
+    }, 5000) // Poll every 5 seconds
+
+    return () => clearInterval(interval)
+  }, [activeTab, materialFiles, pollAndMergeStatuses])
+
   const handleUploadClick = useCallback(() => {
     uploadInputRef.current?.click()
+  }, [])
+
+  /** Copy asset ID to clipboard with "asset://" prefix for use in chat */
+  const [copiedAssetId, setCopiedAssetId] = useState<string | null>(null)
+  
+  const handleCopyAssetId = useCallback(async (assetId: string, event?: React.MouseEvent) => {
+    if (event) {
+      event.stopPropagation()
+    }
+    const assetUrl = `asset://${assetId}`
+    try {
+      await navigator.clipboard.writeText(assetUrl)
+      setCopiedAssetId(assetId)
+      toast.success(`已复制: ${assetUrl}`, { duration: 2000 })
+      setTimeout(() => setCopiedAssetId(null), 2000)
+    } catch (err) {
+      console.error('Failed to copy asset ID:', err)
+      toast.error('复制失败')
+    }
   }, [])
 
   /** Validate a single image file against volcengine asset constraints.
@@ -712,13 +749,12 @@ export default function MaterialManager() {
       return items.map((item) => (
         <div key={item.path} className={`select-none`}>
           <div
-            className={`flex items-center gap-2 px-3 py-1 rounded-lg cursor-pointer transition-all duration-200 hover:bg-gray-100 dark:hover:bg-gray-800 ${
-              selectedFolder?.path === item.path && item.is_directory
+            className={`flex items-center gap-2 px-3 py-1 rounded-lg cursor-pointer transition-all duration-200 hover:bg-gray-100 dark:hover:bg-gray-800 ${selectedFolder?.path === item.path && item.is_directory
                 ? 'bg-blue-50 dark:bg-blue-950 border-l-4 border-blue-500'
                 : item.is_media && !item.is_directory
                   ? 'hover:bg-green-50 dark:hover:bg-green-950'
                   : ''
-            }`}
+              }`}
             style={{ paddingLeft: `${12 + depth * 16}px` }}
             onClick={() =>
               item.is_directory
@@ -793,11 +829,10 @@ export default function MaterialManager() {
         {filteredMediaFiles.map((file) => (
           <div
             key={file.path}
-            className={`group relative bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border cursor-pointer ${
-              selectedFile?.path === file.path
+            className={`group relative bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border cursor-pointer ${selectedFile?.path === file.path
                 ? 'border-blue-500 ring-2 ring-blue-200 dark:ring-blue-800'
                 : 'border-gray-200 dark:border-gray-700'
-            }`}
+              }`}
             onClick={() => handleFileClick(file)}
           >
             <div className="aspect-square bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 flex items-center justify-center overflow-hidden relative">
@@ -865,11 +900,10 @@ export default function MaterialManager() {
         {filteredMediaFiles.map((file) => (
           <div
             key={file.path}
-            className={`flex items-center gap-4 p-3 bg-white dark:bg-gray-800 rounded-lg border hover:shadow-md transition-shadow min-w-0 cursor-pointer ${
-              selectedFile?.path === file.path
+            className={`flex items-center gap-4 p-3 bg-white dark:bg-gray-800 rounded-lg border hover:shadow-md transition-shadow min-w-0 cursor-pointer ${selectedFile?.path === file.path
                 ? 'border-blue-500 ring-2 ring-blue-200 dark:ring-blue-800'
                 : 'border-gray-200 dark:border-gray-700'
-            }`}
+              }`}
             onClick={() => handleFileClick(file)}
           >
             <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0 relative">
@@ -1251,6 +1285,28 @@ export default function MaterialManager() {
                             <span className="text-xs mt-1">{file.type.toUpperCase()}</span>
                           </div>
                         )}
+                        {/* Copy Asset ID button - only show for assets with asset_id */}
+                        {file.asset_id && file.status === 'Active' && (
+                          <button
+                            onClick={(e) => handleCopyAssetId(file.asset_id!, e)}
+                            className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 rounded-lg transition-colors"
+                            title={`复制 Asset ID：asset://${file.asset_id}`}
+                          >
+                            {copiedAssetId === file.asset_id ? (
+                              <Check className="w-4 h-4 text-green-400" />
+                            ) : (
+                              <Copy className="w-4 h-4 text-white" />
+                            )}
+                          </button>
+                        )}
+                        {/* Status indicator overlay for Processing/Failed */}
+                        {file.status === 'Processing' && (
+                          <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                            <div className="text-white text-xs bg-black/50 px-2 py-1 rounded">
+                              处理中...
+                            </div>
+                          </div>
+                        )}
                       </div>
                       <div className="p-3">
                         <div className="text-xs font-mono text-gray-700 dark:text-gray-300 truncate" title={file.display_name}>
@@ -1258,7 +1314,22 @@ export default function MaterialManager() {
                         </div>
                         <div className="flex items-center justify-between mt-1 gap-1">
                           <span className="text-xs text-gray-500">{formatFileSize(file.size)}</span>
-                          <StatusBadge status={file.status} />
+                          <div className="flex items-center gap-1">
+                            <StatusBadge status={file.status} />
+                            {file.asset_id && file.status === 'Active' && (
+                              <button
+                                onClick={(e) => handleCopyAssetId(file.asset_id!, e)}
+                                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                                title={`复制引用：asset://${file.asset_id}`}
+                              >
+                                {copiedAssetId === file.asset_id ? (
+                                  <Check className="w-3 h-3 text-green-500" />
+                                ) : (
+                                  <Copy className="w-3 h-3 text-gray-400" />
+                                )}
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>

@@ -69,11 +69,10 @@ DEFAULT_PROVIDERS_CONFIG: AppConfig = {
         'api_key': '',
     },
     'material_library': {
-        'ak': '',
-        'sk': '',
-        'group_id': '',
+        'api_token': '',  # Bearer token for authentication
+        'base_url': 'https://www.cfgpu.com/userapi/v1',  # API base URL
         'project_name': 'default',
-        'public_base_url': '',
+        # Public URL uses JAAZ_SERVER_URL env var (same as video/image/audio for LLM)
     },
 }
 
