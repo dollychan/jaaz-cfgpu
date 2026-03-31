@@ -36,9 +36,8 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const { t } = useTranslation()
 
-  // auto 模式：所有非 text 类工具都被选中
-  const mediaTols = allTools.filter(t => t.type !== 'text')
-  const initialAutoMode = mediaTols.length > 0 && mediaTols.every(t => selectedTools.some(s => s.id === t.id))
+  // auto 模式：所有工具都被选中（包括 text 和 media）
+  const initialAutoMode = allTools.length > 0 && allTools.every(t => selectedTools.some(s => s.id === t.id))
   const [autoMode, setAutoMode] = useState(initialAutoMode)
 
   // 按 provider 分组
@@ -77,6 +76,22 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
 
   /** Text 类工具：单选（只允许一个 text tool 同时选中），与 media tools 互斥 */
   const handleTextToolClick = (modelKey: string) => {
+    // Auto 模式下点击 → 切到非 auto，只选中该 text tool
+    if (autoMode) {
+      const tool = allTools.find(t => toKey(t) === modelKey)
+      if (!tool) return
+      const newSelected = [tool]
+      setSelectedTools(newSelected)
+      localStorage.setItem(
+        'disabled_tool_ids',
+        JSON.stringify(allTools.filter(t => !newSelected.includes(t)).map(t => t.id))
+      )
+      setAutoMode(false)
+      onAutoToggle?.(false)
+      onModelToggle?.(modelKey, true)
+      return
+    }
+
     const alreadySelected = isModelSelected(modelKey)
     if (alreadySelected) {
       // 取消选中
@@ -152,24 +167,15 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
     if (activeTab === 'text') return  // text 类不支持 auto 模式
 
     if (enabled) {
-      // 开启 auto：选中所有 media tools，text tools 保持不变
-      const mediaTools = allTools.filter(t => t.type !== 'text')
-      const newSelected = [
-        ...selectedTools.filter(t => t.type === 'text'),
-        ...mediaTools,
-      ]
+      // 开启 auto：选中所有工具（包括 text 和 media tools）
+      const newSelected = allTools
       setSelectedTools(newSelected)
-      localStorage.setItem('disabled_tool_ids', JSON.stringify(
-        allTools.filter(t => !newSelected.includes(t)).map(t => t.id)
-      ))
+      localStorage.setItem('disabled_tool_ids', JSON.stringify([]))
     } else {
-      // 关闭 auto：只保留第一个 image tool + 当前 text tools
+      // 关闭 auto：只保留第一个 image tool，清除 text tools
       const imageTools = allTools.filter(t => t.type === 'image')
       const firstImageTool = imageTools[0] ?? null
-      const newSelected = [
-        ...selectedTools.filter(t => t.type === 'text'),
-        ...(firstImageTool ? [firstImageTool] : []),
-      ]
+      const newSelected = firstImageTool ? [firstImageTool] : []
       setSelectedTools(newSelected)
       localStorage.setItem('disabled_tool_ids', JSON.stringify(
         allTools.filter(t => !newSelected.includes(t)).map(t => t.id)
