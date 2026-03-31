@@ -127,11 +127,11 @@ CRITICAL: ALWAYS pass audio file_ids directly to the tool's input_audios paramet
 MATERIAL ASSET ID DETECTION:
 When the user pastes a material asset in their message with CFGPU API structure:
 ```json
-{
+{{
   "type": "image_url",
-  "image_url": {"url": "asset://asset-20260224200602-qn7wr"},
+  "image_url": {{"url": "asset://asset-20260224200602-qn7wr"}},
   "role": "reference_image"
-}
+}}
 ```
 
 You MUST:
