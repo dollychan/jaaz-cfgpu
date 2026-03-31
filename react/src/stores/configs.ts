@@ -1,19 +1,18 @@
-import { ModelInfo, ToolInfo } from '@/api/model'
-import { LLMConfig, Model } from '@/types/types'
+import { ToolInfo } from '@/api/model'
+import { LLMConfig } from '@/types/types'
 import { create } from 'zustand'
 
 type ConfigsStore = {
   initCanvas: boolean
   setInitCanvas: (initCanvas: boolean) => void
 
-  textModels: Model[]
-  setTextModels: (models: Model[]) => void
+  /** 所有可用工具（text / image / video 三类，来自 /api/list_tools） */
+  allTools: ToolInfo[]
+  setAllTools: (tools: ToolInfo[]) => void
 
+  /** 用户当前选中的工具（同样包含三类） */
   selectedTools: ToolInfo[]
   setSelectedTools: (models: ToolInfo[]) => void
-
-  textModel?: Model
-  setTextModel: (model?: Model) => void
 
   showInstallDialog: boolean
   setShowInstallDialog: (show: boolean) => void
@@ -27,9 +26,6 @@ type ConfigsStore = {
   showLoginDialog: boolean
   setShowLoginDialog: (show: boolean) => void
 
-  allTools: ToolInfo[]
-  setAllTools: (tools: ToolInfo[]) => void
-
   providers: {
     [key: string]: LLMConfig
   }
@@ -40,11 +36,11 @@ const useConfigsStore = create<ConfigsStore>((set) => ({
   initCanvas: false,
   setInitCanvas: (initCanvas) => set({ initCanvas }),
 
-  textModels: [],
-  setTextModels: (models) => set({ textModels: models }),
+  allTools: [],
+  setAllTools: (tools) => set({ allTools: tools }),
 
-  textModel: undefined,
-  setTextModel: (model) => set({ textModel: model }),
+  selectedTools: [],
+  setSelectedTools: (tools) => set({ selectedTools: tools }),
 
   showInstallDialog: false,
   setShowInstallDialog: (show) => set({ showInstallDialog: show }),
@@ -60,12 +56,6 @@ const useConfigsStore = create<ConfigsStore>((set) => ({
 
   providers: {},
   setProviders: (providers) => set({ providers }),
-
-  allTools: [],
-  setAllTools: (tools) => set({ allTools: tools }),
-
-  selectedTools: [],
-  setSelectedTools: (tools) => set({ selectedTools: tools }),
 }))
 
 export default useConfigsStore

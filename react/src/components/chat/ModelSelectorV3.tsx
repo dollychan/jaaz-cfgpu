@@ -1,6 +1,5 @@
 import React, { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { ChevronDown, Component } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,7 +13,7 @@ import { Switch } from '@/components/ui/switch'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useTranslation } from 'react-i18next'
 import { useConfigs } from '@/contexts/configs'
-import { ModelInfo, ToolInfo } from '@/api/model'
+import { ToolInfo } from '@/api/model'
 import { PROVIDER_NAME_MAPPING } from '@/constants'
 import { ScrollArea } from '@/components/ui/scroll-area'
 
@@ -28,9 +27,6 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
   onAutoToggle
 }) => {
   const {
-    textModel,
-    setTextModel,
-    textModels,
     selectedTools,
     setSelectedTools,
     allTools,
@@ -40,277 +36,156 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const { t } = useTranslation()
 
-  // 初始化时判断auto模式：如果所有工具都被选中，则为auto模式
-  const initialAutoMode = allTools.length > 0 && selectedTools.length === allTools.length
+  // auto 模式：所有非 text 类工具都被选中
+  const mediaTols = allTools.filter(t => t.type !== 'text')
+  const initialAutoMode = mediaTols.length > 0 && mediaTols.every(t => selectedTools.some(s => s.id === t.id))
   const [autoMode, setAutoMode] = useState(initialAutoMode)
 
-  // Group models by provider
-  const groupModelsByProvider = (models: typeof allTools) => {
-    const grouped: { [provider: string]: typeof allTools } = {}
-    models?.forEach((model) => {
-      if (!grouped[model.provider]) {
-        grouped[model.provider] = []
-      }
-      grouped[model.provider].push(model)
+  // 按 provider 分组
+  const groupByProvider = (tools: ToolInfo[]) => {
+    const grouped: { [provider: string]: ToolInfo[] } = {}
+    tools.forEach((tool) => {
+      if (!grouped[tool.provider]) grouped[tool.provider] = []
+      grouped[tool.provider].push(tool)
     })
-    return grouped
-  }
-
-  const groupLLMsByProvider = (models: typeof textModels) => {
-    const grouped: { [provider: string]: typeof textModels } = {}
-    models?.forEach((model) => {
-      if (!grouped[model.provider]) {
-        grouped[model.provider] = []
-      }
-      grouped[model.provider].push(model)
-    })
-    return grouped
-  }
-
-  // Sort providers to put Jaaz first
-  const sortProviders = <T,>(grouped: { [provider: string]: T[] }) => {
-    const sortedEntries = Object.entries(grouped).sort(([a], [b]) => {
+    // Jaaz first
+    const sorted = Object.entries(grouped).sort(([a], [b]) => {
       if (a === 'jaaz') return -1
       if (b === 'jaaz') return 1
       return a.localeCompare(b)
     })
-    return Object.fromEntries(sortedEntries)
+    return Object.fromEntries(sorted)
   }
 
-  const groupedLLMs = sortProviders(groupLLMsByProvider(textModels))
-  const groupedTools = groupModelsByProvider(allTools)
-
-  // Filter tools by type
-  const getToolsByType = (type: 'image' | 'video') => {
-    const filteredTools = allTools.filter(tool => tool.type === type)
-    return groupModelsByProvider(filteredTools)
+  // 按类型过滤并分组
+  const getToolsByType = (type: 'image' | 'video' | 'text') => {
+    return groupByProvider(allTools.filter(t => t.type === type))
   }
 
-  const handleModelToggle = (modelKey: string, checked: boolean) => {
-    if (activeTab === 'text') {
-      // Text models are optional, single select
-      if (checked) {
-        const model = textModels?.find((m) => m.provider + ':' + m.model === modelKey)
-        if (model) {
-          setTextModel(model)
-          localStorage.setItem('text_model', modelKey)
+  const getCurrentModels = () => getToolsByType(activeTab)
 
-          // In non-auto mode: clear all tools when selecting text model
-          if (!autoMode) {
-            setSelectedTools([])
-            localStorage.setItem('disabled_tool_ids', JSON.stringify(allTools.map(t => t.id)))
-          }
-        }
-      } else {
-        // Allow unselecting text model (make it optional)
-        setTextModel(undefined)
-        localStorage.removeItem('text_model')
-      }
-    } else if (!autoMode) {
-      // Non-auto mode: only one tool service allowed, also clear text model
-      // When selecting a tool, clear all others and clear text model
-      if (checked) {
-        const tool = allTools.find((m) => m.provider + ':' + m.id === modelKey)
-        if (tool) {
-          // Only keep the selected tool, clear all others and text model
-          setSelectedTools([tool])
-          setTextModel(undefined)
-          localStorage.removeItem('text_model')
-          localStorage.setItem(
-            'disabled_tool_ids',
-            JSON.stringify(
-              allTools.filter((t) => t.id !== tool.id).map((t) => t.id)
-            )
-          )
-        }
-      } else {
-        // Deselect: clear selection
-        setSelectedTools([])
-        localStorage.setItem(
-          'disabled_tool_ids',
-          JSON.stringify(allTools.map((t) => t.id))
-        )
-      }
+  // modelKey = provider:id
+  const toKey = (t: ToolInfo) => `${t.provider}:${t.id}`
+
+  const isModelSelected = (modelKey: string) =>
+    selectedTools.some(t => toKey(t) === modelKey)
+
+  const getProviderDisplayInfo = (provider: string) => {
+    const info = PROVIDER_NAME_MAPPING[provider]
+    return { name: info?.name || provider, icon: info?.icon }
+  }
+
+  /** Text 类工具：单选（只允许一个 text tool 同时选中） */
+  const handleTextToolClick = (modelKey: string) => {
+    const alreadySelected = isModelSelected(modelKey)
+    if (alreadySelected) {
+      // 取消选中
+      setSelectedTools(selectedTools.filter(t => toKey(t) !== modelKey))
+      localStorage.setItem(
+        'disabled_tool_ids',
+        JSON.stringify([...allTools.filter(t => toKey(t) !== modelKey || !isModelSelected(toKey(t))).map(t => t.id)])
+      )
     } else {
-      // Auto mode: multi-select (keep existing behavior)
-      let newSelected: ToolInfo[] = []
-      const tool = allTools.find((m) => m.provider + ':' + m.id === modelKey)
-
-      if (checked) {
-        if (tool) {
-          newSelected = [...selectedTools, tool]
-        }
-      } else {
-        newSelected = selectedTools.filter(
-          (t) => t.provider + ':' + t.id !== modelKey
-        )
-      }
-
+      // 选中该 text tool，并移除之前选中的所有 text tools
+      const tool = allTools.find(t => toKey(t) === modelKey)
+      if (!tool) return
+      const newSelected = [
+        ...selectedTools.filter(t => t.type !== 'text'),
+        tool,
+      ]
       setSelectedTools(newSelected)
       localStorage.setItem(
         'disabled_tool_ids',
-        JSON.stringify(
-          allTools.filter((t) => !newSelected.includes(t)).map((t) => t.id)
-        )
+        JSON.stringify(allTools.filter(t => !newSelected.includes(t)).map(t => t.id))
       )
-
-      // 更新auto模式状态
-      const isAuto = newSelected.length === allTools.length
-      setAutoMode(isAuto)
+      onModelToggle?.(modelKey, true)
     }
-    onModelToggle?.(modelKey, checked)
+  }
+
+  /** Image/Video 工具 click 处理 */
+  const handleMediaToolClick = (modelKey: string) => {
+    if (autoMode) {
+      // Auto 模式下点击 → 切到非 auto，只选中该工具
+      const tool = allTools.find(t => toKey(t) === modelKey)
+      if (!tool) return
+      const newSelected = [
+        ...selectedTools.filter(t => t.type === 'text'),  // 保留已选的 text tools
+        tool,
+      ]
+      setSelectedTools(newSelected)
+      localStorage.setItem(
+        'disabled_tool_ids',
+        JSON.stringify(allTools.filter(t => !newSelected.includes(t)).map(t => t.id))
+      )
+      setAutoMode(false)
+      onAutoToggle?.(false)
+      onModelToggle?.(modelKey, true)
+    } else {
+      // 非 auto 模式：image/video 工具互斥（同一次只选一个 media tool）
+      const alreadySelected = isModelSelected(modelKey)
+      if (alreadySelected) {
+        // 取消
+        const newSelected = selectedTools.filter(t => toKey(t) !== modelKey)
+        setSelectedTools(newSelected)
+        localStorage.setItem(
+          'disabled_tool_ids',
+          JSON.stringify(allTools.filter(t => !newSelected.includes(t)).map(t => t.id))
+        )
+      } else {
+        // 选中，移除之前选中的 image/video tools（text tools 保留）
+        const tool = allTools.find(t => toKey(t) === modelKey)
+        if (!tool) return
+        const newSelected = [
+          ...selectedTools.filter(t => t.type === 'text'),
+          tool,
+        ]
+        setSelectedTools(newSelected)
+        localStorage.setItem(
+          'disabled_tool_ids',
+          JSON.stringify(allTools.filter(t => !newSelected.includes(t)).map(t => t.id))
+        )
+        onModelToggle?.(modelKey, true)
+      }
+    }
   }
 
   const handleModelClick = (modelKey: string) => {
     if (activeTab === 'text') {
-      // Text models: toggle select, no auto mode
-      const isSelected = textModel?.provider + ':' + textModel?.model === modelKey
-      if (isSelected) {
-        // Deselect text model
-        setTextModel(undefined)
-        localStorage.removeItem('text_model')
-      } else {
-        // Select text model
-        const model = textModels?.find((m) => m.provider + ':' + m.model === modelKey)
-        if (model) {
-          setTextModel(model)
-          localStorage.setItem('text_model', modelKey)
-
-          // In non-auto mode: clear all tools when selecting text model
-          if (!autoMode) {
-            setSelectedTools([])
-            localStorage.setItem('disabled_tool_ids', JSON.stringify(allTools.map(t => t.id)))
-          }
-
-          onModelToggle?.(modelKey, true)
-        }
-      }
-    } else if (autoMode) {
-      // Auto mode: clicking a tool should switch to non-auto mode and select only that tool
-      // This ensures consistency with non-auto behavior (mutually exclusive selection)
-      const tool = allTools.find((m) => m.provider + ':' + m.id === modelKey)
-      if (tool) {
-        setSelectedTools([tool])
-        setTextModel(undefined)
-        localStorage.removeItem('text_model')
-        localStorage.setItem(
-          'disabled_tool_ids',
-          JSON.stringify(
-            allTools.filter((t) => t.id !== tool.id).map((t) => t.id)
-          )
-        )
-        setAutoMode(false)
-        onAutoToggle?.(false)
-        onModelToggle?.(modelKey, true)
-      }
+      handleTextToolClick(modelKey)
     } else {
-      // Non-auto mode: single tool selection across all types, exclusive with text model
-      const isAlreadySelected = selectedTools.some(t => t.provider + ':' + t.id === modelKey)
-
-      if (isAlreadySelected) {
-        // Deselect current tool
-        setSelectedTools([])
-        localStorage.setItem(
-          'disabled_tool_ids',
-          JSON.stringify(allTools.map((t) => t.id))
-        )
-      } else {
-        // Select this tool, deselect all others and clear text model
-        const tool = allTools.find((m) => m.provider + ':' + m.id === modelKey)
-        if (tool) {
-          setSelectedTools([tool])
-          setTextModel(undefined)
-          localStorage.removeItem('text_model')
-          localStorage.setItem(
-            'disabled_tool_ids',
-            JSON.stringify(
-              allTools.filter((t) => t.id !== tool.id).map((t) => t.id)
-            )
-          )
-          onModelToggle?.(modelKey, true)
-        }
-      }
+      handleMediaToolClick(modelKey)
     }
   }
 
   const handleAutoToggle = (enabled: boolean) => {
-    if (activeTab === 'text') {
-      // Text models don't support auto mode
-      return
-    }
+    if (activeTab === 'text') return  // text 类不支持 auto 模式
 
     if (enabled) {
-      // 开启auto模式时，选中所有工具和一个text model
-      setSelectedTools(allTools)
-      localStorage.setItem('disabled_tool_ids', JSON.stringify([]))
-
-      // 如果没有text model被选中，选中第一个可用的text model
-      if (!textModel && textModels && textModels.length > 0) {
-        const defaultTextModel = textModels[0]
-        setTextModel(defaultTextModel)
-        localStorage.setItem('text_model', defaultTextModel.provider + ':' + defaultTextModel.model)
-      }
+      // 开启 auto：选中所有 media tools，text tools 保持不变
+      const mediaTools = allTools.filter(t => t.type !== 'text')
+      const newSelected = [
+        ...selectedTools.filter(t => t.type === 'text'),
+        ...mediaTools,
+      ]
+      setSelectedTools(newSelected)
+      localStorage.setItem('disabled_tool_ids', JSON.stringify(
+        allTools.filter(t => !newSelected.includes(t)).map(t => t.id)
+      ))
     } else {
-      // 关闭auto模式时，只选中image类型的第一个工具，clear text model
-      const imageTools = allTools.filter(tool => tool.type === 'image')
-      const firstImageTool = imageTools.length > 0 ? imageTools[0] : null
-
-      if (firstImageTool) {
-        setSelectedTools([firstImageTool])
-        setTextModel(undefined)
-        localStorage.removeItem('text_model')
-        localStorage.setItem(
-          'disabled_tool_ids',
-          JSON.stringify(
-            allTools.filter((t) => t.id !== firstImageTool.id).map((t) => t.id)
-          )
-        )
-      } else {
-        // No tools available, clear selection
-        setSelectedTools([])
-        setTextModel(undefined)
-        localStorage.removeItem('text_model')
-        localStorage.setItem('disabled_tool_ids', JSON.stringify(allTools.map(t => t.id)))
-      }
+      // 关闭 auto：只保留第一个 image tool + 当前 text tools
+      const imageTools = allTools.filter(t => t.type === 'image')
+      const firstImageTool = imageTools[0] ?? null
+      const newSelected = [
+        ...selectedTools.filter(t => t.type === 'text'),
+        ...(firstImageTool ? [firstImageTool] : []),
+      ]
+      setSelectedTools(newSelected)
+      localStorage.setItem('disabled_tool_ids', JSON.stringify(
+        allTools.filter(t => !newSelected.includes(t)).map(t => t.id)
+      ))
     }
     setAutoMode(enabled)
     onAutoToggle?.(enabled)
-  }
-
-  // Get selected models count
-  const getSelectedModelsCount = () => {
-    if (activeTab === 'text') {
-      return textModel ? 1 : 0
-    } else {
-      return selectedTools.length
-    }
-  }
-
-  // Get current models based on active tab
-  const getCurrentModels = () => {
-    if (activeTab === 'text') {
-      return groupedLLMs
-    } else {
-      return getToolsByType(activeTab)
-    }
-  }
-
-  // Check if a model is selected
-  const isModelSelected = (modelKey: string) => {
-    if (activeTab === 'text') {
-      return textModel?.provider + ':' + textModel?.model === modelKey
-    } else {
-      return selectedTools.some(t => t.provider + ':' + t.id === modelKey)
-    }
-  }
-
-  // Get provider display info
-  const getProviderDisplayInfo = (provider: string) => {
-    const providerInfo = PROVIDER_NAME_MAPPING[provider]
-    return {
-      name: providerInfo?.name || provider,
-      icon: providerInfo?.icon,
-    }
   }
 
   const tabs = [
@@ -385,13 +260,9 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
                       {providerInfo.name}
                     </div>
                   </DropdownMenuLabel>
-                  {providerModels.map((model: ModelInfo | ToolInfo) => {
-                    const modelKey = activeTab === 'text'
-                      ? model.provider + ':' + (model as ModelInfo).model
-                      : model.provider + ':' + (model as ToolInfo).id
-                    const modelName = activeTab === 'text'
-                      ? (model as ModelInfo).model
-                      : (model as ToolInfo).display_name || (model as ToolInfo).id
+                  {providerModels.map((tool: ToolInfo) => {
+                    const modelKey = toKey(tool)
+                    const modelName = tool.display_name || tool.id
 
                     return (
                       <div

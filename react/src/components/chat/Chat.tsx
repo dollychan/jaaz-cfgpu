@@ -613,7 +613,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   }
 
   const onSendMessages = useCallback(
-    (data: Message[], configs: { textModel: Model; toolList: ToolInfo[] }) => {
+    (data: Message[], configs: { toolList: ToolInfo[] }) => {
       setPending('text')
       setMessages(ensureMessagesUids(data))
 
@@ -621,7 +621,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         sessionId: sessionId!,
         canvasId: canvasId,
         newMessages: data,
-        textModel: configs.textModel,
+        textModel: undefined,   // 向后兼容：text model 现在通过 toolList 中 type='text' 的工具传递
         toolList: configs.toolList,
         systemPrompt:
           localStorage.getItem('system_prompt') || DEFAULT_SYSTEM_PROMPT,

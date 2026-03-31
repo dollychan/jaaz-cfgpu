@@ -31,7 +31,6 @@ import Textarea, { TextAreaRef } from 'rc-textarea'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import ModelSelectorV2 from './ModelSelectorV2'
 import ModelSelectorV3 from './ModelSelectorV3'
 import { useAuth } from '@/contexts/AuthContext'
 import { useBalance } from '@/hooks/use-balance'
@@ -57,7 +56,6 @@ type ChatTextareaProps = {
   onSendMessages: (
     data: Message[],
     configs: {
-      textModel: Model
       toolList: ToolInfo[]
     }
   ) => void
@@ -74,7 +72,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
 }) => {
   const { t } = useTranslation()
   const { authStatus } = useAuth()
-  const { textModel, selectedTools, setShowLoginDialog } = useConfigs()
+  const { selectedTools, setShowLoginDialog } = useConfigs()
   const { balance } = useBalance()
   const [prompt, setPrompt] = useState('')
   const textareaRef = useRef<TextAreaRef>(null)
@@ -217,32 +215,22 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
   const handleSendPrompt = useCallback(async () => {
     if (pending) return
 
-    // 检查是否使用 Jaaz 服务
-    const isUsingJaaz =
-      textModel?.provider === 'jaaz' ||
-      selectedTools?.some((tool) => tool.provider === 'jaaz')
-    // console.log('👀isUsingJaaz', textModel, selectedTools, isUsingJaaz)
+    // 检查是否使用 Jaaz 服务（任一已选工具来自 jaaz）
+    const isUsingJaaz = selectedTools?.some((tool) => tool.provider === 'jaaz')
 
     // 只有当使用 Jaaz 服务且余额为 0 时才提醒充值
     if (authStatus.is_logged_in && isUsingJaaz && parseFloat(balance) <= 0) {
       toast.error(t('chat:insufficientBalance'), {
         description: <RechargeContent />,
-        duration: 10000, // 10s，给用户更多时间操作
+        duration: 10000,
       })
       return
     }
 
-    // Check that at least one model/tool is selected
-    if (!textModel && (!selectedTools || selectedTools.length === 0)) {
+    // 至少选择一个工具（text / image / video 均可）
+    if (!selectedTools || selectedTools.length === 0) {
       toast.error(t('chat:textarea.selectModelOrTool', 'Please select at least one model or tool'))
       return
-    }
-
-    if (!selectedTools || selectedTools.length === 0) {
-      // Tool is optional, just show warning if not selected but text model exists
-      if (textModel) {
-        toast.warning(t('chat:textarea.selectTool'))
-      }
     }
 
     let text_content: MessageContent[] | string = prompt
@@ -336,12 +324,10 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
     setPrompt('')
 
     onSendMessages(newMessage, {
-      textModel: textModel,
       toolList: selectedTools && selectedTools.length > 0 ? selectedTools : [],
     })
   }, [
     pending,
-    textModel,
     selectedTools,
     prompt,
     onSendMessages,
@@ -861,13 +847,13 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
                   variant="default"
                   size="icon"
                   onClick={handleSendPrompt}
-                  disabled={(!textModel && !selectedTools?.length) || prompt.length === 0}
+                  disabled={!selectedTools?.length || prompt.length === 0}
                 >
                   <ArrowUp className="size-4" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="top">
-                {(!textModel && !selectedTools?.length)
+                {!selectedTools?.length
                   ? t('chat:textarea.selectModelOrTool', 'Please select at least one model or tool')
                   : prompt.length === 0
                     ? t('chat:textarea.enterPrompt', 'Please enter a message')

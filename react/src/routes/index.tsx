@@ -71,7 +71,6 @@ function Home() {
                 canvas_id: nanoid(),
                 messages: messages,
                 session_id: nanoid(),
-                text_model: configs.textModel,
                 tool_list: configs.toolList,
                 system_prompt: localStorage.getItem('system_prompt') || DEFAULT_SYSTEM_PROMPT,
               })

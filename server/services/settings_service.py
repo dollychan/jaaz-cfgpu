@@ -36,7 +36,16 @@ app_settings = {}
 DEFAULT_SETTINGS = {
     "proxy": "system",  # 代理设置：'' (不使用代理), 'system' (使用系统代理), 或具体的代理URL地址
     "enabled_knowledge": [],  # 启用的知识库ID列表（保持兼容性）
-    "enabled_knowledge_data": []  # 启用的知识库完整数据列表
+    "enabled_knowledge_data": [],  # 启用的知识库完整数据列表
+    # 内置编排模型：无需用户在对话界面选择，由 server 端配置
+    # 作为 react agent 的大脑，负责理解用户意图、分发任务给各类工具
+    # provider/model/url/api_key 均可留空，此时 fallback 到用户选择的 text model tool
+    "builtin_model": {
+        "provider": "",
+        "model": "",
+        "url": "",
+        "api_key": ""
+    }
 }
 
 

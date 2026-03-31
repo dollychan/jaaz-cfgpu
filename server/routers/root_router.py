@@ -98,11 +98,13 @@ async def get_models() -> list[ModelInfo]:
 async def list_tools() -> list[ToolInfoJson]:
     config = config_service.get_config()
     res: list[ToolInfoJson] = []
+
+    # --- image / video tools（来自 tool_service）---
     for tool_id, tool_info in tool_service.tools.items():
         if tool_info.get('provider') == 'system':
             continue
         provider = tool_info['provider']
-        provider_api_key = config[provider].get('api_key', '').strip()
+        provider_api_key = config.get(provider, {}).get('api_key', '').strip()
         if provider != 'comfyui' and not provider_api_key:
             continue
         res.append({
@@ -111,6 +113,37 @@ async def list_tools() -> list[ToolInfoJson]:
             'type': tool_info.get('type', ''),
             'display_name': tool_info.get('display_name', ''),
         })
+
+    # --- text model tools（来自 config，供用户作为"工具"选择）---
+    # Ollama text models
+    ollama_url = config.get('ollama', {}).get('url', '').strip()
+    if ollama_url:
+        ollama_models = get_ollama_model_list()
+        for model_name in ollama_models:
+            res.append({
+                'id': model_name,
+                'provider': 'ollama',
+                'type': 'text',
+                'display_name': model_name,
+            })
+
+    # Other providers' text models
+    for provider, provider_config in config.items():
+        if provider in ['ollama', 'comfyui', 'material_library']:
+            continue
+        provider_api_key = provider_config.get('api_key', '').strip()
+        provider_url = provider_config.get('url', '').strip()
+        if not provider_api_key or not provider_url:
+            continue
+        models = provider_config.get('models', {})
+        for model_name, model_config in models.items():
+            if model_config.get('type') == 'text':
+                res.append({
+                    'id': model_name,        # text tool 的 id 就是 model name
+                    'provider': provider,
+                    'type': 'text',
+                    'display_name': model_name,
+                })
 
     # Handle ComfyUI models separately
     # comfyui_config = config.get('comfyui', {})

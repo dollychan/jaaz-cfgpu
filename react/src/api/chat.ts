@@ -12,7 +12,8 @@ export const sendMessages = async (payload: {
   sessionId: string
   canvasId: string
   newMessages: Message[]
-  textModel: Model
+  /** 向后兼容保留，新版前端通过 toolList 中 type='text' 的工具传递 text model */
+  textModel?: Model
   toolList: ToolInfo[]
   systemPrompt: string | null
 }) => {

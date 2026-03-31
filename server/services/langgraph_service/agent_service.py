@@ -3,15 +3,16 @@ from services.db_service import db_service
 from .StreamProcessor import StreamProcessor
 from .agent_manager import AgentManager
 import traceback
-import re
-import json
-import uuid
 from utils.http_client import HttpClient
 from langgraph_swarm import create_swarm  # type: ignore
+from langgraph.prebuilt import create_react_agent  # type: ignore
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
+from langchain_core.messages import HumanMessage
+from langchain_core.tools import tool as lc_tool  # type: ignore
 from services.websocket_service import send_to_websocket  # type: ignore
 from services.config_service import config_service
+from services.settings_service import settings_service
 from services.tool_service import tool_service
 from typing import Optional, List, Dict, Any, cast, Set, TypedDict
 from models.config_model import ModelInfo
@@ -46,7 +47,6 @@ def _fix_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     # 第二遍：修复AIMessage中的tool_calls
     for msg in messages:
         if msg.get('role') == 'assistant' and msg.get('tool_calls'):
-            # 过滤掉没有对应ToolMessage的tool_calls
             valid_tool_calls: List[Dict[str, Any]] = []
             removed_calls: List[str] = []
 
@@ -57,386 +57,22 @@ def _fix_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 elif tool_call_id:
                     removed_calls.append(tool_call_id)
 
-            # 记录修复信息
             if removed_calls:
                 print(
                     f"🔧 修复消息历史：移除了 {len(removed_calls)} 个不完整的工具调用: {removed_calls}")
 
-            # 更新消息
             if valid_tool_calls:
                 msg_copy = msg.copy()
                 msg_copy['tool_calls'] = valid_tool_calls
                 fixed_messages.append(msg_copy)
-            elif msg.get('content'):  # 如果没有有效的tool_calls但有content，保留消息
+            elif msg.get('content'):
                 msg_copy = msg.copy()
-                msg_copy.pop('tool_calls', None)  # 移除空的tool_calls
+                msg_copy.pop('tool_calls', None)
                 fixed_messages.append(msg_copy)
-            # 如果既没有有效tool_calls也没有content，跳过这条消息
         else:
-            # 非assistant消息或没有tool_calls的消息直接保留
             fixed_messages.append(msg)
 
     return fixed_messages
-
-
-def _get_last_user_text(messages: List[Dict[str, Any]]) -> str:
-    """从消息列表中取出最后一条用户消息的纯文本内容"""
-    for msg in reversed(messages):
-        if msg.get('role') == 'user':
-            content = msg.get('content', '')
-            if isinstance(content, list):
-                # 多模态消息：拼接所有 text 部分
-                return ' '.join(
-                    part.get('text', '')
-                    for part in content
-                    if isinstance(part, dict) and part.get('type') == 'text'
-                )
-            return str(content)
-    return ''
-
-
-def _parse_tool_params_from_message(message: str) -> Dict[str, Any]:
-    """从用户消息中解析工具调用参数
-
-    支持解析：
-    - <input_images><image file_id="xxx"/></input_images>
-    - <input_videos><video file_id="xxx"/></input_videos>
-    - <input_audios><audio file_id="xxx"/></input_audios>
-    - <duration>10</duration>
-    - <aspect_ratio>16:9</aspect_ratio>
-    - CFGPU asset JSON 结构：{"type": "image_url", "image_url": {"url": "asset://..."}}
-    - 剩余文本作为 prompt
-    """
-    params: Dict[str, Any] = {}
-    remaining = message
-
-    # --- XML 标签解析 ---
-    def extract_xml_file_ids(tag: str, inner_tag: str) -> List[str]:
-        nonlocal remaining
-        match = re.search(rf'<{tag}>(.*?)</{tag}>', remaining, re.DOTALL)
-        if not match:
-            return []
-        inner = match.group(1)
-        file_ids = re.findall(rf'<{inner_tag}[^>]+file_id=["\']([^"\']+)["\']', inner)
-        remaining = remaining.replace(match.group(0), '')
-        return file_ids
-
-    images = extract_xml_file_ids('input_images', 'image')
-    if images:
-        params['input_images'] = images
-
-    videos = extract_xml_file_ids('input_videos', 'video')
-    if videos:
-        params['input_videos'] = videos
-
-    audios = extract_xml_file_ids('input_audios', 'audio')
-    if audios:
-        params['input_audios'] = audios
-
-    # <duration>
-    duration_match = re.search(r'<duration>(\d+)</duration>', remaining)
-    if duration_match:
-        params['duration'] = int(duration_match.group(1))
-        remaining = remaining.replace(duration_match.group(0), '')
-
-    # <aspect_ratio>
-    ar_match = re.search(r'<aspect_ratio>([^<]+)</aspect_ratio>', remaining)
-    if ar_match:
-        params['aspect_ratio'] = ar_match.group(1).strip()
-        remaining = remaining.replace(ar_match.group(0), '')
-
-    # --- CFGPU asset JSON 结构解析 ---
-    # 匹配形如：
-    #   {
-    #     "type": "image_url",
-    #     "image_url": {"url": "asset://xxx"},
-    #     "role": "reference_image"
-    #   }
-    # 外层 {} 内部可能包含一层嵌套 {}（image_url/video_url/audio_url 的值对象）
-    # 使用允许一层嵌套的正则：(?:[^{}]|\{[^{}]*\})*
-    asset_block_pattern = re.compile(
-        r'\{(?:[^{}]|\{[^{}]*\})*?"type"\s*:\s*"(image_url|video_url|audio_url)"(?:[^{}]|\{[^{}]*\})*?\}',
-        re.DOTALL
-    )
-    for block_match in list(asset_block_pattern.finditer(remaining)):
-        block_str = block_match.group(0)
-        url_type = block_match.group(1)
-        # 从 block 中提取 asset:// URL
-        url_match = re.search(r'"url"\s*:\s*"(asset://[^"]+)"', block_str)
-        if url_match:
-            asset_url = url_match.group(1)
-            if url_type == 'image_url':
-                params.setdefault('input_images', []).append(asset_url)
-            elif url_type == 'video_url':
-                params.setdefault('input_videos', []).append(asset_url)
-            elif url_type == 'audio_url':
-                params.setdefault('input_audios', []).append(asset_url)
-            remaining = remaining.replace(block_str, '')
-
-    # 剩余文本清理后作为 prompt
-    prompt = remaining.strip()
-    params['prompt'] = prompt
-
-    return params
-
-
-async def _execute_tools_directly(
-    messages: List[Dict[str, Any]],
-    canvas_id: str,
-    session_id: str,
-    tool_list: List[ToolInfoJson],
-) -> None:
-    """无 text model 时直接执行工具
-
-    解析用户消息中的参数（prompt / input_images / input_videos / input_audios /
-    duration / aspect_ratio），然后对 tool_list 中的每个工具依次调用。
-    """
-    user_text = _get_last_user_text(messages)
-    params = _parse_tool_params_from_message(user_text)
-
-    print(f"🛠️ Direct tool execution params: {params}")
-
-    runnable_config = {
-        'configurable': {
-            'canvas_id': canvas_id,
-            'session_id': session_id,
-            'tool_list': tool_list,
-        }
-    }
-
-    # 收集本次执行产生的所有消息，用于保存到 DB
-    assistant_tool_calls = []
-    tool_result_messages = []
-
-    for tool_json in tool_list:
-        tool_id = tool_json.get('id', '')
-        tool_fn = tool_service.get_tool(tool_id)
-        if not tool_fn:
-            print(f"⚠️ Tool not found: {tool_id}")
-            continue
-
-        # 根据工具的 schema 过滤参数，只传工具实际接受的字段
-        tool_args: Dict[str, Any] = {}
-        if hasattr(tool_fn, 'args_schema') and tool_fn.args_schema:
-            accepted_fields = set(tool_fn.args_schema.model_fields.keys())
-            for k, v in params.items():
-                if k in accepted_fields:
-                    tool_args[k] = v
-        else:
-            # 没有 schema 信息时，只传 prompt
-            if params.get('prompt'):
-                tool_args['prompt'] = params['prompt']
-
-        # prompt 是必需参数，如果为空则跳过
-        if not tool_args.get('prompt'):
-            print(f"⚠️ Skipping tool {tool_id}: no prompt available")
-            continue
-
-        # 生成 tool_call_id
-        call_id = str(uuid.uuid4())
-        tool_args['tool_call_id'] = call_id
-
-        # 通知前端工具调用开始
-        await send_to_websocket(session_id, {
-            'type': 'tool_call',
-            'id': call_id,
-            'name': tool_id,
-            'arguments': json.dumps({k: v for k, v in tool_args.items() if k != 'tool_call_id'}),
-        })
-
-        # 记录 assistant tool_call 信息
-        assistant_tool_calls.append({
-            'id': call_id,
-            'type': 'function',
-            'function': {
-                'name': tool_id,
-                'arguments': json.dumps({k: v for k, v in tool_args.items() if k != 'tool_call_id'}),
-            }
-        })
-
-        try:
-            # 含 InjectedToolCallId 的工具必须以 ToolCall 格式调用：
-            # {'args': {...}, 'name': '...', 'type': 'tool_call', 'tool_call_id': '...'}
-            tool_call_input = {
-                'args': {k: v for k, v in tool_args.items() if k != 'tool_call_id'},
-                'name': tool_id,
-                'type': 'tool_call',
-                'id': call_id,  # LangChain ToolCall TypedDict 使用 'id' 而非 'tool_call_id'
-            }
-            result = await tool_fn.ainvoke(tool_call_input, config=runnable_config)
-            tool_result_content = str(result)
-        except Exception as e:
-            tool_result_content = f"Tool execution failed: {str(e)}"
-            print(f"❌ Tool {tool_id} failed: {e}")
-            traceback.print_exc()
-
-        tool_result_msg = {
-            'role': 'tool',
-            'tool_call_id': call_id,
-            'content': tool_result_content,
-        }
-        tool_result_messages.append(tool_result_msg)
-
-        # 通知前端工具调用结果
-        await send_to_websocket(session_id, {
-            'type': 'tool_call_result',
-            'id': call_id,
-            'message': tool_result_msg,
-        })
-
-    # 保存消息到 DB：assistant 消息（含 tool_calls）+ 每个 tool 结果消息
-    if assistant_tool_calls:
-        assistant_msg = {
-            'role': 'assistant',
-            'content': None,
-            'tool_calls': assistant_tool_calls,
-        }
-        await db_service.create_message(session_id, 'assistant', json.dumps(assistant_msg))
-
-    for tool_msg in tool_result_messages:
-        await db_service.create_message(session_id, 'tool', json.dumps(tool_msg))
-
-    # 发送全量消息到前端（供前端同步状态）
-    all_messages_snapshot = list(messages) + (
-        [{'role': 'assistant', 'content': None, 'tool_calls': assistant_tool_calls}]
-        if assistant_tool_calls else []
-    ) + tool_result_messages
-    await send_to_websocket(session_id, {
-        'type': 'all_messages',
-        'messages': all_messages_snapshot,
-    })
-
-
-async def langgraph_multi_agent(
-    messages: List[Dict[str, Any]],
-    canvas_id: str,
-    session_id: str,
-    text_model: ModelInfo,
-    tool_list: List[ToolInfoJson],
-    system_prompt: Optional[str] = None
-) -> None:
-    """多智能体处理函数
-
-    根据text_model和tool_list的有无决定处理方式：
-    - 有text_model + 有工具 → planner + creator agents（原来的逻辑）
-    - 只有text_model → 直接使用text model处理（不需要agents）
-    - 只有工具 → 只创建creator agent处理
-    - 都没有 → 错误
-
-    Args:
-        messages: 消息历史
-        canvas_id: 画布ID
-        session_id: 会话ID
-        text_model: 文本模型配置（可能为空）
-        tool_list: 工具模型配置列表（可能为空）
-        system_prompt: 系统提示词
-    """
-    try:
-        # Check what we have to work with
-        has_text_model = text_model and text_model.get('model')
-        has_tools = tool_list and len(tool_list) > 0
-
-        print(f"📝 has_text_model: {has_text_model}, has_tools: {has_tools}")
-
-        # Case 1: Only text model, no tools → direct LLM call
-        if has_text_model and not has_tools:
-            print("💬 Mode: Direct text model (no tools)")
-            text_model_instance = _create_text_model(text_model)
-            fixed_messages = _fix_chat_history(messages)
-
-            # Convert messages to LangChain format
-            from langchain_core.messages import (
-                HumanMessage,
-                AIMessage,
-                ToolMessage,
-                SystemMessage,
-            )
-
-            lc_messages = []
-            for msg in fixed_messages:
-                role = msg.get('role')
-                content = msg.get('content', '')
-
-                if role == 'user':
-                    lc_messages.append(HumanMessage(content=content))
-                elif role == 'assistant':
-                    lc_messages.append(AIMessage(content=content))
-                elif role == 'system':
-                    lc_messages.append(SystemMessage(content=content))
-                elif role == 'tool':
-                    lc_messages.append(ToolMessage(
-                        content=content,
-                        tool_call_id=msg.get('tool_call_id', '')
-                    ))
-
-            # If system prompt provided, prepend it
-            if system_prompt:
-                lc_messages.insert(0, SystemMessage(content=system_prompt))
-
-            # Call LLM
-            response = await text_model_instance.ainvoke(lc_messages)
-
-            # Send response
-            await send_to_websocket(session_id, {
-                'type': 'delta',
-                'delta': response.content,
-                'role': 'assistant'
-            })
-            return
-
-        # Case 2: Both text model and tools (original multi-agent flow)
-        if has_text_model and has_tools:
-            print("🤖 Mode: Multi-agent (text model + tools)")
-            # 0. 修复消息历史
-            fixed_messages = _fix_chat_history(messages)
-
-            # 2. 文本模型
-            text_model_instance = _create_text_model(text_model)
-
-            # 3. 创建智能体
-            agents = AgentManager.create_agents(
-                text_model_instance,
-                tool_list,  # 传入所有注册的工具
-                system_prompt or ""
-            )
-            agent_names = [agent.name for agent in agents]
-            print('👇agent_names', agent_names)
-            last_agent = AgentManager.get_last_active_agent(
-                fixed_messages, agent_names)
-
-            print('👇last_agent', last_agent)
-
-            # 4. 创建智能体群组
-            swarm = create_swarm(
-                agents=agents,  # type: ignore
-                default_active_agent=last_agent if last_agent else agent_names[0]
-            )
-
-            # 5. 创建上下文
-            context = {
-                'canvas_id': canvas_id,
-                'session_id': session_id,
-                'tool_list': tool_list,
-            }
-
-            # 6. 流处理
-            processor = StreamProcessor(
-                session_id, db_service, send_to_websocket)  # type: ignore
-            await processor.process_stream(swarm, fixed_messages, context)
-            return
-
-        # Case 3: Only tools, no text model — directly invoke tools without LLM
-        if has_tools and not has_text_model:
-            print("🛠️ Mode: Direct tool execution (no text model)")
-            fixed_messages = _fix_chat_history(messages)
-            await _execute_tools_directly(fixed_messages, canvas_id, session_id, tool_list)
-            return
-
-        # Case 4: Neither text model nor tools
-        raise ValueError("Either text_model or tool_list must be provided")
-
-    except Exception as e:
-        await _handle_error(e, session_id)
 
 
 def _create_text_model(text_model: ModelInfo) -> Any:
@@ -447,16 +83,12 @@ def _create_text_model(text_model: ModelInfo) -> Any:
     api_key = config_service.app_config.get(  # type: ignore
         provider, {}).get("api_key", "")
 
-    # TODO: Verify if max token is working
-    # max_tokens = text_model.get('max_tokens', 8148)
-
     if provider == 'ollama':
         return ChatOllama(
             model=model,
             base_url=url,
         )
     else:
-        # Create httpx client with SSL configuration for ChatOpenAI
         http_client = HttpClient.create_sync_client()
         http_async_client = HttpClient.create_async_client()
         return ChatOpenAI(
@@ -465,10 +97,243 @@ def _create_text_model(text_model: ModelInfo) -> Any:
             timeout=300,
             base_url=url,
             temperature=0,
-            # max_tokens=max_tokens, # TODO: 暂时注释掉有问题的参数
             http_client=http_client,
             http_async_client=http_async_client
         )
+
+
+def _create_builtin_model() -> Optional[Any]:
+    """从 settings 中读取并创建内置编排模型实例
+
+    内置模型是 react agent 的大脑，负责理解用户意图、分发任务给各类工具。
+    配置项在 settings.json 的 builtin_model 字段中。
+    如果未配置，返回 None（调用方需做 fallback 处理）。
+    """
+    raw_settings = settings_service.get_raw_settings()
+    builtin_config = raw_settings.get('builtin_model', {})
+
+    provider = builtin_config.get('provider', '').strip()
+    model = builtin_config.get('model', '').strip()
+    url = builtin_config.get('url', '').strip()
+    api_key = builtin_config.get('api_key', '').strip()
+
+    if not provider or not model:
+        print("⚠️ builtin_model 未配置，将 fallback 到用户选择的 text model tool 作为编排器")
+        return None
+
+    print(f"🤖 使用内置编排模型: {provider}/{model}")
+
+    # api_key 和 url 优先用 settings 中的值，其次 fallback 到 config.toml
+    if not api_key:
+        api_key = config_service.app_config.get(provider, {}).get('api_key', '')
+    if not url:
+        url = config_service.app_config.get(provider, {}).get('url', '')
+
+    model_info: ModelInfo = {
+        'provider': provider,
+        'model': model,
+        'url': url,
+        'type': 'text',
+    }
+    return _create_text_model(model_info)
+
+
+def _create_text_generation_tool(model_info: Dict[str, Any]) -> Optional[Any]:
+    """把一个 text model 包装成 LangChain tool
+
+    Args:
+        model_info: 包含 provider / model (或 id) / url / display_name 的字典
+
+    Returns:
+        LangChain BaseTool 或 None（创建失败时）
+    """
+    provider = model_info.get('provider', '').strip()
+    # text 类型工具的 id 就是 model name；也接受 'model' 字段（来自 ModelInfo）
+    model_name = (model_info.get('model') or model_info.get('id') or '').strip()
+    display_name = (model_info.get('display_name') or model_name).strip()
+
+    if not provider or not model_name:
+        print(f"⚠️ 无法创建 text tool：provider 或 model 为空 {model_info}")
+        return None
+
+    # URL fallback
+    url = (model_info.get('url') or '').strip()
+    if not url:
+        url = config_service.app_config.get(provider, {}).get('url', '')
+
+    lm: ModelInfo = {'provider': provider, 'model': model_name, 'url': url, 'type': 'text'}
+    try:
+        text_llm = _create_text_model(lm)
+    except Exception as e:
+        print(f"⚠️ 创建 text model 失败 {provider}/{model_name}: {e}")
+        return None
+
+    # 工具名需是合法 Python 标识符
+    safe = (
+        model_name
+        .replace('/', '_').replace('-', '_').replace('.', '_')
+        .replace(':', '_').replace(' ', '_')
+    )
+    tool_name = f"generate_text_with_{provider}_{safe}"
+
+    @lc_tool(
+        tool_name,
+        description=(
+            f"Use {display_name} for complex text generation, deep reasoning, "
+            "creative writing, detailed analysis, summarization, and "
+            "knowledge-intensive tasks. Call this when high-quality language "
+            "output is needed beyond simple prompt/parameter extraction."
+        )
+    )
+    async def text_gen_tool(prompt: str) -> str:
+        resp = await text_llm.ainvoke([HumanMessage(content=prompt)])
+        return str(resp.content)
+
+    return text_gen_tool
+
+
+async def langgraph_multi_agent(
+    messages: List[Dict[str, Any]],
+    canvas_id: str,
+    session_id: str,
+    text_model: ModelInfo,
+    tool_list: List[ToolInfoJson],
+    system_prompt: Optional[str] = None
+) -> None:
+    """统一的多模型 agent 处理函数
+
+    架构：
+    - 内置模型（builtin_model，server 端 settings 配置）作为 react agent 的编排大脑
+    - tool_list 可包含三类工具：
+        * type='text'  → 外部 text model，包装为 text generation tool
+        * type='image' → 图像生成工具（来自 tool_service）
+        * type='video' → 视频生成工具（来自 tool_service）
+    - text_model（旧参数，向后兼容）若存在也作为 text tool 注入
+    - 若 builtin_model 未配置，fallback 到第一个 text tool 作为编排器
+
+    Args:
+        messages: 消息历史
+        canvas_id: 画布ID
+        session_id: 会话ID
+        text_model: 文本模型配置（旧参数，向后兼容；新前端直接放入 tool_list）
+        tool_list: 工具列表（现在包含 text/image/video 三类）
+        system_prompt: 系统提示词
+    """
+    try:
+        has_text_model = text_model and text_model.get('model')
+        has_tools = tool_list and len(tool_list) > 0
+
+        if not has_text_model and not has_tools:
+            raise ValueError(
+                "Either text_model or tool_list must be provided. "
+                "Please select at least one model or tool."
+            )
+
+        print(f"📝 has_text_model: {has_text_model}, has_tools: {has_tools}")
+
+        # 0. 修复消息历史
+        fixed_messages = _fix_chat_history(messages)
+
+        # 1. 获取内置编排模型
+        orchestrator = _create_builtin_model()
+
+        # 2. 构建工具列表
+        all_lc_tools: List[Any] = []
+
+        # 向后兼容：旧前端传来的 text_model 也作为 text tool 注入
+        if has_text_model:
+            text_tool = _create_text_generation_tool(dict(text_model))
+            if text_tool:
+                all_lc_tools.append(text_tool)
+                print(f"✅ 添加 text tool（来自 text_model）: {text_tool.name}")
+
+        # 遍历 tool_list
+        for tool_json in (tool_list or []):
+            tool_type = tool_json.get('type', '')
+            tool_id = tool_json.get('id', '')
+
+            if tool_type == 'text':
+                # text model → 包装成 text generation tool
+                txt_tool = _create_text_generation_tool(dict(tool_json))
+                if txt_tool:
+                    all_lc_tools.append(txt_tool)
+                    print(f"✅ 添加 text tool（来自 tool_list）: {txt_tool.name}")
+            else:
+                # image/video → 从 tool_service 获取
+                lc_t = tool_service.get_tool(tool_id)
+                if lc_t:
+                    all_lc_tools.append(lc_t)
+                else:
+                    print(f"⚠️ 工具未找到: {tool_id}")
+
+        print(f"🛠️ 可用工具列表: {[t.name for t in all_lc_tools]}")
+
+        # 3. 如果没有内置模型，fallback 到第一个 text tool 作为编排器
+        if not orchestrator:
+            # 找到第一个 text generation tool，作为编排器（非工具）
+            text_tools = [t for t in all_lc_tools if t.name.startswith('generate_text_with_')]
+            media_tools = [t for t in all_lc_tools if not t.name.startswith('generate_text_with_')]
+
+            if text_tools:
+                # 取第一个 text tool 对应的 model info，创建 orchestrator
+                if has_text_model:
+                    orchestrator = _create_text_model(text_model)
+                    all_lc_tools = media_tools  # text model 已作为 orchestrator，不再作为 tool
+                    print(f"⚠️ builtin_model 未配置，使用 text_model 作为编排器（向后兼容模式）")
+                else:
+                    # 从 tool_list 找第一个 text type
+                    first_text_tool_json = next(
+                        (t for t in (tool_list or []) if t.get('type') == 'text'), None
+                    )
+                    if first_text_tool_json:
+                        provider = first_text_tool_json.get('provider', '')
+                        model_name = first_text_tool_json.get('id', '')
+                        url = config_service.app_config.get(provider, {}).get('url', '')
+                        lm: ModelInfo = {'provider': provider, 'model': model_name, 'url': url, 'type': 'text'}
+                        orchestrator = _create_text_model(lm)
+                        # 从 tool list 中移除这个 text tool（避免模型调用自己）
+                        tool_name_to_remove = text_tools[0].name
+                        all_lc_tools = [t for t in all_lc_tools if t.name != tool_name_to_remove]
+                        print(f"⚠️ builtin_model 未配置，使用 {model_name} 作为编排器（fallback 模式）")
+
+        if not orchestrator:
+            raise ValueError(
+                "No model available for orchestration. "
+                "Please configure a built-in model in settings, or select a text model tool."
+            )
+
+        # 4. 构建 system prompt（使用 ImageVideoCreatorAgent 的 prompt，它包含丰富的输入检测规则）
+        from .configs.image_vide_creator_config import ImageVideoCreatorAgentConfig
+        creator_config = ImageVideoCreatorAgentConfig(tool_list or [])
+        agent_system_prompt = system_prompt or creator_config.system_prompt
+
+        # 5. 创建单个 react agent
+        agent = create_react_agent(
+            name='assistant',
+            model=orchestrator,
+            tools=all_lc_tools,
+            prompt=agent_system_prompt,
+        )
+
+        # 6. 用 create_swarm 封装（与 StreamProcessor.process_stream 兼容）
+        swarm = create_swarm(
+            agents=[agent],
+            default_active_agent='assistant'
+        )
+
+        # 7. 创建上下文并运行
+        context = {
+            'canvas_id': canvas_id,
+            'session_id': session_id,
+            'tool_list': tool_list or [],
+        }
+
+        processor = StreamProcessor(
+            session_id, db_service, send_to_websocket)  # type: ignore
+        await processor.process_stream(swarm, fixed_messages, context)
+
+    except Exception as e:
+        await _handle_error(e, session_id)
 
 
 async def _handle_error(error: Exception, session_id: str) -> None:
