@@ -75,7 +75,7 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
     return { name: info?.name || provider, icon: info?.icon }
   }
 
-  /** Text 类工具：单选（只允许一个 text tool 同时选中） */
+  /** Text 类工具：单选（只允许一个 text tool 同时选中），与 media tools 互斥 */
   const handleTextToolClick = (modelKey: string) => {
     const alreadySelected = isModelSelected(modelKey)
     if (alreadySelected) {
@@ -86,13 +86,10 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
         JSON.stringify([...allTools.filter(t => toKey(t) !== modelKey || !isModelSelected(toKey(t))).map(t => t.id)])
       )
     } else {
-      // 选中该 text tool，并移除之前选中的所有 text tools
+      // 选中该 text tool，清除所有其他工具（text 和 media 互斥）
       const tool = allTools.find(t => toKey(t) === modelKey)
       if (!tool) return
-      const newSelected = [
-        ...selectedTools.filter(t => t.type !== 'text'),
-        tool,
-      ]
+      const newSelected = [tool]
       setSelectedTools(newSelected)
       localStorage.setItem(
         'disabled_tool_ids',
@@ -102,16 +99,13 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
     }
   }
 
-  /** Image/Video 工具 click 处理 */
+  /** Image/Video 工具 click 处理，与 text tools 互斥 */
   const handleMediaToolClick = (modelKey: string) => {
     if (autoMode) {
-      // Auto 模式下点击 → 切到非 auto，只选中该工具
+      // Auto 模式下点击 → 切到非 auto，只选中该工具（清除 text tools）
       const tool = allTools.find(t => toKey(t) === modelKey)
       if (!tool) return
-      const newSelected = [
-        ...selectedTools.filter(t => t.type === 'text'),  // 保留已选的 text tools
-        tool,
-      ]
+      const newSelected = [tool]
       setSelectedTools(newSelected)
       localStorage.setItem(
         'disabled_tool_ids',
@@ -121,7 +115,7 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
       onAutoToggle?.(false)
       onModelToggle?.(modelKey, true)
     } else {
-      // 非 auto 模式：image/video 工具互斥（同一次只选一个 media tool）
+      // 非 auto 模式：image/video 工具互斥，且与 text tools 互斥
       const alreadySelected = isModelSelected(modelKey)
       if (alreadySelected) {
         // 取消
@@ -132,13 +126,10 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
           JSON.stringify(allTools.filter(t => !newSelected.includes(t)).map(t => t.id))
         )
       } else {
-        // 选中，移除之前选中的 image/video tools（text tools 保留）
+        // 选中该 media tool，清除所有其他工具（包括 text tools）
         const tool = allTools.find(t => toKey(t) === modelKey)
         if (!tool) return
-        const newSelected = [
-          ...selectedTools.filter(t => t.type === 'text'),
-          tool,
-        ]
+        const newSelected = [tool]
         setSelectedTools(newSelected)
         localStorage.setItem(
           'disabled_tool_ids',
