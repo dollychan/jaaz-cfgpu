@@ -18,17 +18,19 @@ class AgentManager:
     def create_agents(
         model: Any,
         tool_list: List[ToolInfoJson],
-        system_prompt: str = ""
+        system_prompt: str = "",
+        tools_only: bool = False
     ) -> List[CompiledGraph]:
         """创建所有智能体
 
         Args:
-            model: 语言模型实例
+            model: 语言模型实例（tools_only=True时可为None）
             tool_list: 工具列表
             system_prompt: 系统提示词
+            tools_only: 只创建工具执行agent（不需要planner）
 
         Returns:
-            List[Any]: 创建好的智能体列表
+            List[CompiledGraph]: 创建好的智能体列表
         """
         # 为不同类型的智能体过滤合适的工具
         image_tools = [tool for tool in tool_list if tool.get('type') == 'image']
@@ -37,6 +39,14 @@ class AgentManager:
         print(f"📸 图像工具: {image_tools}")
         print(f"🎬 视频工具: {video_tools}")
 
+        # If tools_only mode, only create the ImageVideoCreatorAgent
+        if tools_only:
+            image_video_creator_config = ImageVideoCreatorAgentConfig(tool_list)
+            image_video_creator_agent = AgentManager._create_langgraph_agent(
+                model, image_video_creator_config)
+            return [image_video_creator_agent]
+
+        # Otherwise, create both planner and creator agents
         planner_config = PlannerAgentConfig()
         planner_agent = AgentManager._create_langgraph_agent(
             model, planner_config)

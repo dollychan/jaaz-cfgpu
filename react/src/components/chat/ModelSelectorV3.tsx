@@ -332,7 +332,7 @@ const ModelSelectorV3: React.FC<ModelSelectorV3Props> = ({
             <Switch
               checked={autoMode}
               onCheckedChange={handleAutoToggle}
-            // disabled={activeTab === 'text'}
+              disabled={activeTab === 'text'}
             />
           </div>
         </div>

@@ -85,51 +85,151 @@ async def langgraph_multi_agent(
 ) -> None:
     """多智能体处理函数
 
+    根据text_model和tool_list的有无决定处理方式：
+    - 有text_model + 有工具 → planner + creator agents（原来的逻辑）
+    - 只有text_model → 直接使用text model处理（不需要agents）
+    - 只有工具 → 只创建creator agent处理
+    - 都没有 → 错误
+
     Args:
         messages: 消息历史
         canvas_id: 画布ID
         session_id: 会话ID
-        text_model: 文本模型配置
-        tool_list: 工具模型配置列表（图像或视频模型）
+        text_model: 文本模型配置（可能为空）
+        tool_list: 工具模型配置列表（可能为空）
         system_prompt: 系统提示词
     """
     try:
-        # 0. 修复消息历史
-        fixed_messages = _fix_chat_history(messages)
+        # Check what we have to work with
+        has_text_model = text_model and text_model.get('model')
+        has_tools = tool_list and len(tool_list) > 0
 
-        # 2. 文本模型
-        text_model_instance = _create_text_model(text_model)
+        print(f"📝 has_text_model: {has_text_model}, has_tools: {has_tools}")
 
-        # 3. 创建智能体
-        agents = AgentManager.create_agents(
-            text_model_instance,
-            tool_list,  # 传入所有注册的工具
-            system_prompt or ""
-        )
-        agent_names = [agent.name for agent in agents]
-        print('👇agent_names', agent_names)
-        last_agent = AgentManager.get_last_active_agent(
-            fixed_messages, agent_names)
+        # Case 1: Only text model, no tools → direct LLM call
+        if has_text_model and not has_tools:
+            print("💬 Mode: Direct text model (no tools)")
+            text_model_instance = _create_text_model(text_model)
+            fixed_messages = _fix_chat_history(messages)
 
-        print('👇last_agent', last_agent)
+            # Convert messages to LangChain format
+            from langchain_core.messages import (
+                HumanMessage,
+                AIMessage,
+                ToolMessage,
+                SystemMessage,
+            )
 
-        # 4. 创建智能体群组
-        swarm = create_swarm(
-            agents=agents,  # type: ignore
-            default_active_agent=last_agent if last_agent else agent_names[0]
-        )
+            lc_messages = []
+            for msg in fixed_messages:
+                role = msg.get('role')
+                content = msg.get('content', '')
 
-        # 5. 创建上下文
-        context = {
-            'canvas_id': canvas_id,
-            'session_id': session_id,
-            'tool_list': tool_list,
-        }
+                if role == 'user':
+                    lc_messages.append(HumanMessage(content=content))
+                elif role == 'assistant':
+                    lc_messages.append(AIMessage(content=content))
+                elif role == 'system':
+                    lc_messages.append(SystemMessage(content=content))
+                elif role == 'tool':
+                    lc_messages.append(ToolMessage(
+                        content=content,
+                        tool_call_id=msg.get('tool_call_id', '')
+                    ))
 
-        # 6. 流处理
-        processor = StreamProcessor(
-            session_id, db_service, send_to_websocket)  # type: ignore
-        await processor.process_stream(swarm, fixed_messages, context)
+            # If system prompt provided, prepend it
+            if system_prompt:
+                lc_messages.insert(0, SystemMessage(content=system_prompt))
+
+            # Call LLM
+            response = await text_model_instance.ainvoke(lc_messages)
+
+            # Send response
+            await send_to_websocket(session_id, {
+                'type': 'delta',
+                'delta': response.content,
+                'role': 'assistant'
+            })
+            return
+
+        # Case 2: Both text model and tools (original multi-agent flow)
+        if has_text_model and has_tools:
+            print("🤖 Mode: Multi-agent (text model + tools)")
+            # 0. 修复消息历史
+            fixed_messages = _fix_chat_history(messages)
+
+            # 2. 文本模型
+            text_model_instance = _create_text_model(text_model)
+
+            # 3. 创建智能体
+            agents = AgentManager.create_agents(
+                text_model_instance,
+                tool_list,  # 传入所有注册的工具
+                system_prompt or ""
+            )
+            agent_names = [agent.name for agent in agents]
+            print('👇agent_names', agent_names)
+            last_agent = AgentManager.get_last_active_agent(
+                fixed_messages, agent_names)
+
+            print('👇last_agent', last_agent)
+
+            # 4. 创建智能体群组
+            swarm = create_swarm(
+                agents=agents,  # type: ignore
+                default_active_agent=last_agent if last_agent else agent_names[0]
+            )
+
+            # 5. 创建上下文
+            context = {
+                'canvas_id': canvas_id,
+                'session_id': session_id,
+                'tool_list': tool_list,
+            }
+
+            # 6. 流处理
+            processor = StreamProcessor(
+                session_id, db_service, send_to_websocket)  # type: ignore
+            await processor.process_stream(swarm, fixed_messages, context)
+            return
+
+        # Case 3: Only tools, no text model
+        if has_tools and not has_text_model:
+            print("🛠️ Mode: Tool-only execution (no text model)")
+            # Create only the ImageVideoCreatorAgent
+            agents = AgentManager.create_agents(
+                model=None,  # No LLM model
+                tool_list=tool_list,
+                system_prompt=system_prompt or "",
+                tools_only=True
+            )
+
+            # 0. 修复消息历史
+            fixed_messages = _fix_chat_history(messages)
+            agent_names = [agent.name for agent in agents]
+            print('👇agent_names', agent_names)
+
+            # 4. 创建智能体群组
+            swarm = create_swarm(
+                agents=agents,  # type: ignore
+                default_active_agent=agent_names[0]
+            )
+
+            # 5. 创建上下文
+            context = {
+                'canvas_id': canvas_id,
+                'session_id': session_id,
+                'tool_list': tool_list,
+            }
+
+            # 6. 流处理
+            processor = StreamProcessor(
+                session_id, db_service, send_to_websocket)  # type: ignore
+            await processor.process_stream(swarm, fixed_messages, context)
+            return
+
+        # Case 4: Neither text model nor tools
+        raise ValueError("Either text_model or tool_list must be provided")
 
     except Exception as e:
         await _handle_error(e, session_id)
