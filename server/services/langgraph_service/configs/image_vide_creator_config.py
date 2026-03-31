@@ -45,7 +45,51 @@ Discreet modular grid lines and data glyphs fade into matte charcoal background,
 
 class ImageVideoCreatorAgentConfig(BaseAgentConfig):
     def __init__(self, tool_list: List[ToolInfoJson]) -> None:
-        image_input_detection_prompt = """
+        # Issue 4.3: dynamically describe multi-image tool support
+        has_multi_image_tool = any(
+            t.get('id') == 'generate_image_by_gpt_image_1_jaaz' for t in tool_list
+        )
+        multi_image_rule = (
+            "4. If input_images count > 1 , only use generate_image_by_gpt_image_1_jaaz (supports multiple images)"
+            if has_multi_image_tool else
+            "4. If input_images count > 1 , prefer an image tool that explicitly supports multiple input images"
+        )
+
+        # Issue 4.1: describe available text tools so LLM knows when to call them
+        text_tools = [t for t in tool_list if t.get('type') == 'text']
+        if text_tools:
+            def _tool_fn_name(t: ToolInfoJson) -> str:
+                provider = t.get('provider', '')
+                safe_id = (
+                    (t.get('id') or '')
+                    .replace('/', '_').replace('-', '_')
+                    .replace('.', '_').replace(':', '_').replace(' ', '_')
+                )
+                return f"generate_text_with_{provider}_{safe_id}"
+
+            tool_lines = "\n".join(
+                f"  - {_tool_fn_name(t)} ({t.get('display_name') or t.get('id', '')})"
+                for t in text_tools
+            )
+            text_tools_prompt = f"""
+
+TEXT GENERATION TOOLS:
+You have access to the following text model tool(s):
+{tool_lines}
+
+Use them when the task requires:
+- Long-form creative writing (scripts, stories, product descriptions, articles)
+- Deep reasoning, analysis, or summarization
+- Translating or refining text before image/video generation
+- Any step where high-quality text output is the primary deliverable
+
+You MAY call a text tool BEFORE generating images or videos when preparation text improves the result
+(e.g., write a detailed scene description first, then generate the image from that description).
+"""
+        else:
+            text_tools_prompt = ""
+
+        image_input_detection_prompt = f"""
 
 IMAGE INPUT DETECTION:
 When the user's message contains input images in XML format like:
@@ -54,7 +98,7 @@ You MUST:
 1. Parse the XML to extract file_id attributes from <image> tags
 2. Use tools that support input_images parameter when images are present
 3. Pass the extracted file_id(s) in the input_images parameter as a list
-4. If input_images count > 1 , only use generate_image_by_gpt_image_1_jaaz (supports multiple images)
+{multi_image_rule}
 5. For video generation → use video tools with input_images if images are present
 
 CRITICAL: ALWAYS pass the file_id directly to the tool's input_images parameter. Do NOT say you cannot use the file_id. The system automatically converts file_ids to the correct format. Never ask the user to provide a public URL - just call the tool with the file_id as-is.
@@ -145,10 +189,13 @@ When image generation fails, you MUST:
 IMPORTANT: Never ignore tool errors. Always respond to failed tool calls with helpful guidance for the user.
 """
 
-        full_system_prompt = system_prompt + \
-            image_input_detection_prompt + \
-            batch_generation_prompt + \
-            error_handling_prompt
+        full_system_prompt = (
+            system_prompt
+            + text_tools_prompt          # Issue 4.1: text tools section (empty string if none)
+            + image_input_detection_prompt
+            + batch_generation_prompt
+            + error_handling_prompt
+        )
 
         # 图像设计智能体不需要切换到其他智能体
         handoffs: List[HandoffConfig] = []

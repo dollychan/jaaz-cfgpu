@@ -1,7 +1,7 @@
 from models.tool_model import ToolInfoJson
 from services.db_service import db_service
 from .StreamProcessor import StreamProcessor
-from .agent_manager import AgentManager
+from .configs import PlannerAgentConfig, create_handoff_tool
 import traceback
 from utils.http_client import HttpClient
 from langgraph_swarm import create_swarm  # type: ignore
@@ -322,19 +322,61 @@ async def langgraph_multi_agent(
         creator_config = ImageVideoCreatorAgentConfig(tool_list or [])
         agent_system_prompt = system_prompt or creator_config.system_prompt
 
-        # 5. 创建单个 react agent
-        agent = create_react_agent(
-            name='assistant',
-            model=orchestrator,
-            tools=all_lc_tools,
-            prompt=agent_system_prompt,
-        )
+        # 5. 判断是否使用 planner-creator 双 agent 模式（Issue 4.2）
+        # 条件：tool_list 中有 text tools，且没有自定义 system_prompt（自定义时走单 agent）
+        text_tools_in_list = [t for t in (tool_list or []) if t.get('type') == 'text']
+        use_planner = bool(text_tools_in_list and not system_prompt)
 
-        # 6. 用 create_swarm 封装（与 StreamProcessor.process_stream 兼容）
-        swarm = create_swarm(
-            agents=[agent],
-            default_active_agent='assistant'
-        )
+        if use_planner:
+            # planner agent：使用第一个 text model 作为编排大脑，只负责制定计划并移交
+            first_text_json = text_tools_in_list[0]
+            planner_model_info: ModelInfo = {
+                'provider': first_text_json.get('provider', ''),
+                'model': first_text_json.get('id', ''),
+                'url': config_service.app_config.get(
+                    first_text_json.get('provider', ''), {}
+                ).get('url', ''),
+                'type': 'text',
+            }
+            planner_lm = _create_text_model(planner_model_info)
+            write_plan_lc = tool_service.get_tool('write_plan')
+            handoff_to_creator = create_handoff_tool(
+                agent_name='assistant',
+                description='Transfer to the image/video creator agent to execute the plan.',
+            )
+            planner_tools = [t for t in [write_plan_lc, handoff_to_creator] if t is not None]
+            planner_agent = create_react_agent(
+                name='planner',
+                model=planner_lm,
+                tools=planner_tools,
+                prompt=PlannerAgentConfig().system_prompt,
+            )
+
+            # creator agent：使用 builtin model，持有所有 image/video/text gen tools
+            creator_agent = create_react_agent(
+                name='assistant',
+                model=orchestrator,
+                tools=all_lc_tools,
+                prompt=agent_system_prompt,
+            )
+
+            swarm = create_swarm(
+                agents=[planner_agent, creator_agent],
+                default_active_agent='planner',
+            )
+            print("🗺️ 使用 planner-creator 双 agent 模式")
+        else:
+            # 单 agent 模式：无 text tools 或自定义 system_prompt
+            agent = create_react_agent(
+                name='assistant',
+                model=orchestrator,
+                tools=all_lc_tools,
+                prompt=agent_system_prompt,
+            )
+            swarm = create_swarm(
+                agents=[agent],
+                default_active_agent='assistant',
+            )
 
         # 7. 创建上下文并运行
         context = {
