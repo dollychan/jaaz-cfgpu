@@ -261,7 +261,7 @@ async def _execute_tools_directly(
                 'args': {k: v for k, v in tool_args.items() if k != 'tool_call_id'},
                 'name': tool_id,
                 'type': 'tool_call',
-                'tool_call_id': call_id,
+                'id': call_id,  # LangChain ToolCall TypedDict 使用 'id' 而非 'tool_call_id'
             }
             result = await tool_fn.ainvoke(tool_call_input, config=runnable_config)
             tool_result_content = str(result)
