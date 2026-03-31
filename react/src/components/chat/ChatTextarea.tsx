@@ -19,6 +19,7 @@ import {
   ArrowUp,
   Loader2,
   PlusIcon,
+  Search,
   Square,
   XIcon,
   RectangleVertical,
@@ -49,6 +50,12 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { Input } from '@/components/ui/input'
 
 type ChatTextareaProps = {
   pending: boolean
@@ -100,6 +107,9 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
   const durationSliderRef = useRef<HTMLDivElement>(null)
   const MIN_DURATION = 4
   const MAX_DURATION = 15
+
+  const [assetPickerOpen, setAssetPickerOpen] = useState(false)
+  const [assetSearchQuery, setAssetSearchQuery] = useState('')
 
   // Material asset picker
   const { data: materialFiles = [] } = useQuery({
