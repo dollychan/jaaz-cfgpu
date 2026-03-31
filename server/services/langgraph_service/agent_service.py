@@ -146,10 +146,16 @@ def _parse_tool_params_from_message(message: str) -> Dict[str, Any]:
         remaining = remaining.replace(ar_match.group(0), '')
 
     # --- CFGPU asset JSON 结构解析 ---
-    # 匹配形如 {"type": "image_url", "image_url": {"url": "asset://xxx"}, "role": "..."}
-    # 使用宽松匹配，支持多行和字段顺序不固定
+    # 匹配形如：
+    #   {
+    #     "type": "image_url",
+    #     "image_url": {"url": "asset://xxx"},
+    #     "role": "reference_image"
+    #   }
+    # 外层 {} 内部可能包含一层嵌套 {}（image_url/video_url/audio_url 的值对象）
+    # 使用允许一层嵌套的正则：(?:[^{}]|\{[^{}]*\})*
     asset_block_pattern = re.compile(
-        r'\{[^{}]*?"type"\s*:\s*"(image_url|video_url|audio_url)"[^{}]*?\}',
+        r'\{(?:[^{}]|\{[^{}]*\})*?"type"\s*:\s*"(image_url|video_url|audio_url)"(?:[^{}]|\{[^{}]*\})*?\}',
         re.DOTALL
     )
     for block_match in list(asset_block_pattern.finditer(remaining)):
@@ -249,7 +255,15 @@ async def _execute_tools_directly(
         })
 
         try:
-            result = await tool_fn.ainvoke(tool_args, config=runnable_config)
+            # 含 InjectedToolCallId 的工具必须以 ToolCall 格式调用：
+            # {'args': {...}, 'name': '...', 'type': 'tool_call', 'tool_call_id': '...'}
+            tool_call_input = {
+                'args': {k: v for k, v in tool_args.items() if k != 'tool_call_id'},
+                'name': tool_id,
+                'type': 'tool_call',
+                'tool_call_id': call_id,
+            }
+            result = await tool_fn.ainvoke(tool_call_input, config=runnable_config)
             tool_result_content = str(result)
         except Exception as e:
             tool_result_content = f"Tool execution failed: {str(e)}"
