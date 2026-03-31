@@ -14,7 +14,6 @@ export const sendMessages = async (payload: {
   newMessages: Message[]
   textModel: Model
   toolList: ToolInfo[]
-  agentMode: boolean
   systemPrompt: string | null
 }) => {
   const response = await fetch(`/api/chat`, {
@@ -28,7 +27,6 @@ export const sendMessages = async (payload: {
       session_id: payload.sessionId,
       text_model: payload.textModel,
       tool_list: payload.toolList,
-      agent_mode: payload.agentMode,
       system_prompt: payload.systemPrompt,
     }),
   })

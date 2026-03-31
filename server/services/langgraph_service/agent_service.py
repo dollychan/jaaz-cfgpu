@@ -81,8 +81,7 @@ async def langgraph_multi_agent(
     session_id: str,
     text_model: ModelInfo,
     tool_list: List[ToolInfoJson],
-    system_prompt: Optional[str] = None,
-    agent_mode: bool = False
+    system_prompt: Optional[str] = None
 ) -> None:
     """多智能体处理函数
 
@@ -105,8 +104,7 @@ async def langgraph_multi_agent(
         agents = AgentManager.create_agents(
             text_model_instance,
             tool_list,  # 传入所有注册的工具
-            system_prompt or "",
-            agent_mode=agent_mode
+            system_prompt or ""
         )
         agent_names = [agent.name for agent in agents]
         print('👇agent_names', agent_names)
@@ -116,16 +114,9 @@ async def langgraph_multi_agent(
         print('👇last_agent', last_agent)
 
         # 4. 创建智能体群组
-        # When agent_mode is on, always start with planner (first agent) so that
-        # every new user message goes through write_plan first, regardless of which
-        # agent was active at the end of the previous turn.
-        if agent_mode:
-            starting_agent = agent_names[0]  # always 'planner'
-        else:
-            starting_agent = last_agent if last_agent else agent_names[0]
         swarm = create_swarm(
             agents=agents,  # type: ignore
-            default_active_agent=starting_agent
+            default_active_agent=last_agent if last_agent else agent_names[0]
         )
 
         # 5. 创建上下文

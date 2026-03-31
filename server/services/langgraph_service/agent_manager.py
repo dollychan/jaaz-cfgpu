@@ -18,8 +18,7 @@ class AgentManager:
     def create_agents(
         model: Any,
         tool_list: List[ToolInfoJson],
-        system_prompt: str = "",
-        agent_mode: bool = False
+        system_prompt: str = ""
     ) -> List[CompiledGraph]:
         """创建所有智能体
 
@@ -27,9 +26,6 @@ class AgentManager:
             model: 语言模型实例
             tool_list: 工具列表
             system_prompt: 系统提示词
-            agent_mode: 是否启用 Agent 模式（先用 text model 制定计划，再执行）
-                        False（默认）= 直接调用 image/video 工具，不经过规划
-                        True = 先由 PlannerAgent 制定计划，再由 ImageVideoCreatorAgent 执行
 
         Returns:
             List[Any]: 创建好的智能体列表
@@ -40,20 +36,14 @@ class AgentManager:
 
         print(f"📸 图像工具: {image_tools}")
         print(f"🎬 视频工具: {video_tools}")
-        print(f"🤖 Agent 模式: {agent_mode}")
+
+        planner_config = PlannerAgentConfig()
+        planner_agent = AgentManager._create_langgraph_agent(
+            model, planner_config)
 
         image_video_creator_config = ImageVideoCreatorAgentConfig(tool_list)
         image_video_creator_agent = AgentManager._create_langgraph_agent(
             model, image_video_creator_config)
-
-        if not agent_mode:
-            # 直接模式：只创建 ImageVideoCreatorAgent，跳过 Planner
-            return [image_video_creator_agent]
-
-        # Agent 模式：先 PlannerAgent 制定计划，再 ImageVideoCreatorAgent 执行
-        planner_config = PlannerAgentConfig()
-        planner_agent = AgentManager._create_langgraph_agent(
-            model, planner_config)
 
         return [planner_agent, image_video_creator_agent]
 
