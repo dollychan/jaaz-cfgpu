@@ -26,12 +26,25 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
             "Content-Type": "application/json",
         }
 
+    # doubao-seedance-2-0 in r2v mode: output pixel count must be ≤ this value
+    _R2V_MAX_PIXELS = 927408  # 1280×725 ≈ limit; 1280×720 = 921600 is safe
+
+    # Resolution string → (short_side, max_safe) mapping
+    # When input images are present (r2v), the API derives output size from them;
+    # passing an explicit resolution caps the output.
+    _RESOLUTION_MAP: Dict[str, str] = {
+        "480p": "480p",
+        "720p": "720p",
+        "1080p": "720p",  # 1080p → 1920×1080 ≈ 2.07M pixels > r2v limit; cap to 720p
+    }
+
     def _build_request_payload(
         self,
         prompt: str,
         model: str,
         aspect_ratio: str = "16:9",
         duration: int = 5,
+        resolution: str = "480p",
         input_image_data: Optional[List[str]] = None,
         input_video_data: Optional[List[str]] = None,
         input_audio_data: Optional[List[str]] = None,
@@ -109,13 +122,26 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
             print("⚠️ Detected input_audio_data but generate_audio=False; overriding to True")
             generate_audio = True
 
-        print(f"🎵 CFGPU payload: model={model}, generate_audio={generate_audio}, videos={len(input_video_data or [])}, audios={len(input_audio_data or [])}")
+        # In r2v mode (any input images present) the API derives the output video
+        # resolution from the input image dimensions.  doubao-seedance-2-0 hard-limits
+        # the output to ≤ 927408 pixels (≈ 1280×720).  Pass an explicit resolution so
+        # the API caps the output instead of deriving it from a potentially larger image.
+        has_r2v = bool(input_image_data)
+        effective_resolution = self._RESOLUTION_MAP.get(resolution, resolution)
+        if has_r2v and resolution == "1080p":
+            print(
+                f"⚠️ CFGPU r2v mode: capping resolution 1080p → 720p "
+                f"(API limit: ≤{self._R2V_MAX_PIXELS} pixels)"
+            )
+
+        print(f"🎵 CFGPU payload: model={model}, resolution={effective_resolution}, generate_audio={generate_audio}, r2v={has_r2v}, videos={len(input_video_data or [])}, audios={len(input_audio_data or [])}")
 
         return {
             "model": model,
             "content": content,
             "generate_audio": generate_audio,
             "ratio": aspect_ratio,
+            "resolution": effective_resolution,
             "duration": duration,
             "watermark": False,
         }
@@ -219,6 +245,7 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
                     model=model,
                     aspect_ratio=aspect_ratio,
                     duration=duration,
+                    resolution=resolution,
                     input_image_data=input_images,
                     input_video_data=input_videos,
                     input_audio_data=input_audios,
