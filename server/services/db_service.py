@@ -157,9 +157,35 @@ class DatabaseService:
                 }
             return None
 
-    async def delete_canvas(self, id: str):
-        """Delete canvas and related data"""
+    async def delete_session(self, session_id: str):
+        """Delete a chat session and all its messages"""
         async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("DELETE FROM chat_messages WHERE session_id = ?", (session_id,))
+            await db.execute("DELETE FROM chat_sessions WHERE id = ?", (session_id,))
+            await db.commit()
+
+    async def delete_canvas(self, id: str):
+        """Delete canvas and all related sessions and messages"""
+        async with aiosqlite.connect(self.db_path) as db:
+            # 先收集该 canvas 下所有 session id
+            cursor = await db.execute(
+                "SELECT id FROM chat_sessions WHERE canvas_id = ?", (id,)
+            )
+            rows = await cursor.fetchall()
+            session_ids = [row[0] for row in rows]
+
+            # 删除这些 session 的全部消息
+            if session_ids:
+                placeholders = ','.join('?' * len(session_ids))
+                await db.execute(
+                    f"DELETE FROM chat_messages WHERE session_id IN ({placeholders})",
+                    session_ids,
+                )
+
+            # 删除 sessions
+            await db.execute("DELETE FROM chat_sessions WHERE canvas_id = ?", (id,))
+
+            # 删除 canvas 本体
             await db.execute("DELETE FROM canvases WHERE id = ?", (id,))
             await db.commit()
 

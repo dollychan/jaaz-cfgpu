@@ -317,38 +317,24 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
       text_content += `\n</input_audios>`
     }
 
-    // Fetch images as base64; skip any that fail to load
+    // Use server-relative URLs directly — avoids embedding large base64 blobs
+    // in the DB and in every subsequent API prompt.
     // - type='local'  → /api/file/{file_id}
     // - type='asset'  → serve_path (/api/material/serve/{disk_name})
-    const imagePromises = images.map(async (image) => {
-      try {
-        const url = image.type === 'asset' && image.serve_path
-          ? image.serve_path
-          : `/api/file/${image.file_id}`
-        const response = await fetch(url)
-        if (!response.ok) throw new Error(`HTTP ${response.status}`)
-        const blob = await response.blob()
-        return await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onloadend = () => resolve(reader.result as string)
-          reader.onerror = () => reject(reader.error)
-          reader.readAsDataURL(blob)
-        })
-      } catch (err) {
-        console.error(`Failed to load image ${image.file_id}:`, err)
-        return null
-      }
-    })
-
-    const base64Results = await Promise.all(imagePromises)
-    const base64Images = base64Results.filter((b): b is string => b !== null)
+    // The backend will expand these to full external URLs (via JAAZ_SERVER_URL)
+    // before forwarding the message history to the model API.
+    const imageUrls = images.map((image) =>
+      image.type === 'asset' && image.serve_path
+        ? image.serve_path
+        : `/api/file/${image.file_id}`
+    )
 
     const final_content = [
       {
         type: 'text',
         text: text_content as string,
       },
-      ...base64Images.map((url) => ({
+      ...imageUrls.map((url) => ({
         type: 'image_url',
         image_url: { url },
       })),

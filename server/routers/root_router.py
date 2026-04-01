@@ -164,10 +164,16 @@ async def list_tools() -> list[ToolInfoJson]:
 
 
 @router.get("/list_chat_sessions")
-async def list_chat_sessions():
-    return await db_service.list_sessions()
+async def list_chat_sessions(canvas_id: str = ""):
+    return await db_service.list_sessions(canvas_id)
 
 
 @router.get("/chat_session/{session_id}")
 async def get_chat_session(session_id: str):
     return await db_service.get_chat_history(session_id)
+
+
+@router.delete("/chat_session/{session_id}")
+async def delete_chat_session(session_id: str):
+    await db_service.delete_session(session_id)
+    return {"session_id": session_id}

@@ -3,6 +3,8 @@ from services.db_service import db_service
 from .StreamProcessor import StreamProcessor
 from .configs import PlannerAgentConfig, create_handoff_tool
 import traceback
+import json
+import os
 from utils.http_client import HttpClient
 from langgraph_swarm import create_swarm  # type: ignore
 from langgraph.prebuilt import create_react_agent  # type: ignore
@@ -73,6 +75,43 @@ def _fix_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             fixed_messages.append(msg)
 
     return fixed_messages
+
+
+def _expand_image_urls(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """将消息中的相对图片 URL 展开为可供外部模型 API 访问的绝对 URL。
+
+    前端现在把图片存为相对路径（/api/file/{id} 或 /api/material/serve/{name}）
+    而非 base64，避免 DB / prompt 膨胀。此函数在消息发给模型前将相对路径
+    补全为 {JAAZ_SERVER_URL}/api/... 形式，令远端 API（如 cfgpu）可以访问。
+    已是 http/https 的 URL 直接透传。
+    """
+    server_base = os.environ.get("JAAZ_SERVER_URL", "http://127.0.0.1:57988").rstrip("/")
+    result: List[Dict[str, Any]] = []
+    for msg in messages:
+        content = msg.get('content')
+        if isinstance(content, list):
+            new_content = []
+            for item in content:
+                if item.get('type') == 'image_url':
+                    url = item.get('image_url', {}).get('url', '')
+                    if url.startswith('/api/'):
+                        expanded = f"{server_base}{url}"
+                        item = {**item, 'image_url': {**item['image_url'], 'url': expanded}}
+                new_content.append(item)
+            msg = {**msg, 'content': new_content}
+        result.append(msg)
+    return result
+
+
+def _log_payload_size(messages: List[Dict[str, Any]]) -> None:
+    """统计并打印发送给模型的消息历史大小，便于监测上下文长度。"""
+    payload = json.dumps(messages, ensure_ascii=False)
+    byte_size = len(payload.encode('utf-8'))
+    approx_tokens = byte_size // 4  # 粗估：平均 4 字节/token
+    print(
+        f"📊 模型请求 payload: {len(messages)} 条消息  "
+        f"≈{approx_tokens:,} tokens  ({byte_size / 1024:.1f} KB)"
+    )
 
 
 def _create_text_model(text_model: ModelInfo) -> Any:
@@ -391,9 +430,14 @@ async def langgraph_multi_agent(
             'tool_list': tool_list or [],
         }
 
+        # 将相对图片 URL（/api/file/... 或 /api/material/serve/...）展开为
+        # 外部可访问的绝对 URL，供远端模型 API（如 cfgpu）使用
+        model_messages = _expand_image_urls(fixed_messages)
+        _log_payload_size(model_messages)
+
         processor = StreamProcessor(
             session_id, db_service, send_to_websocket)  # type: ignore
-        await processor.process_stream(swarm, fixed_messages, context)
+        await processor.process_stream(swarm, model_messages, context)
 
     except Exception as e:
         await _handle_error(e, session_id)
