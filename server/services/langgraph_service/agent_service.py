@@ -114,6 +114,167 @@ def _log_payload_size(messages: List[Dict[str, Any]]) -> None:
     )
 
 
+DEFAULT_CONTEXT_WINDOW = 128000  # Default context window size for text models
+MAX_SINGLE_MESSAGE_TOKENS = 32000  # Maximum tokens for a single message
+
+
+def _estimate_message_tokens(message: Dict[str, Any]) -> int:
+    """估算单条消息的token数量"""
+    return len(json.dumps(message, ensure_ascii=False).encode('utf-8')) // 4
+
+
+def _truncate_single_message(
+    message: Dict[str, Any],
+    max_tokens: int = MAX_SINGLE_MESSAGE_TOKENS
+) -> Dict[str, Any]:
+    """截断单条消息，特别是处理包含图片BASE64的情况
+    
+    Args:
+        message: 单条消息
+        max_tokens: 单条消息最大token数
+    
+    Returns:
+        截断后的消息
+    """
+    msg_tokens = _estimate_message_tokens(message)
+    
+    if msg_tokens <= max_tokens:
+        return message
+    
+    print(f"⚠️ 单条消息过大 ({msg_tokens:,} tokens > {max_tokens:,})，正在截断...")
+    
+    # 复制消息以避免修改原消息
+    truncated_msg = message.copy()
+    content = truncated_msg.get('content')
+    
+    # 处理多部分内容（如包含图片的消息）
+    if isinstance(content, list):
+        new_content = []
+        removed_images = 0
+        
+        for item in content:
+            item_type = item.get('type', '')
+            
+            # 检查是否是图片URL且包含base64数据
+            if item_type == 'image_url':
+                url = item.get('image_url', {}).get('url', '')
+                
+                # 检测base64数据（通常以 data:image 开头）
+                if url.startswith('data:image'):
+                    # 移除base64图片，添加占位符文本
+                    removed_images += 1
+                    new_content.append({
+                        'type': 'text',
+                        'text': '[图片数据已移除 - 因消息过大]'
+                    })
+                else:
+                    # 保留非base64的图片URL（如 http/https URL）
+                    new_content.append(item)
+            
+            # 保留文本内容，但如果过长也要截断
+            elif item_type == 'text':
+                text = item.get('text', '')
+                text_bytes = len(text.encode('utf-8'))
+                text_tokens = text_bytes // 4
+                
+                # 如果文本本身过长，截断文本
+                if text_tokens > max_tokens // 2:
+                    max_text_bytes = (max_tokens // 2) * 4
+                    truncated_text = text[:max_text_bytes] + '...[文本已截断]'
+                    new_content.append({
+                        'type': 'text',
+                        'text': truncated_text
+                    })
+                else:
+                    new_content.append(item)
+            else:
+                # 保留其他类型的内容
+                new_content.append(item)
+        
+        truncated_msg['content'] = new_content
+        
+        if removed_images > 0:
+            print(f"✅ 移除了 {removed_images} 张base64图片")
+    
+    # 处理纯文本内容
+    elif isinstance(content, str):
+        text_bytes = len(content.encode('utf-8'))
+        text_tokens = text_bytes // 4
+        
+        if text_tokens > max_tokens:
+            max_bytes = max_tokens * 4
+            truncated_msg['content'] = content[:max_bytes] + '...[内容已截断]'
+            print(f"✅ 截断了过长的文本内容")
+    
+    # 计算截断后的token数
+    final_tokens = _estimate_message_tokens(truncated_msg)
+    print(f"✅ 单条消息截断完成：{msg_tokens:,} → {final_tokens:,} tokens")
+    
+    return truncated_msg
+
+
+def _truncate_messages_by_context_window(
+    messages: List[Dict[str, Any]],
+    context_window: int = DEFAULT_CONTEXT_WINDOW
+) -> List[Dict[str, Any]]:
+    """根据上下文窗口大小截断消息历史
+    
+    保留第一条消息（通常是系统提示）和最近的消息，
+    当总 token 数超过 context_window 时，删除中间的历史消息。
+    
+    Args:
+        messages: 消息历史列表
+        context_window: 上下文窗口大小（token 数）
+    
+    Returns:
+        截断后的消息列表
+    """
+    if not messages:
+        return messages
+    
+    # 第一步：截断单条过大的消息（如包含base64图片的消息）
+    truncated_messages = []
+    for msg in messages:
+        truncated_msg = _truncate_single_message(msg, MAX_SINGLE_MESSAGE_TOKENS)
+        truncated_messages.append(truncated_msg)
+    
+    # 第二步：计算当前消息的总 token 数
+    payload = json.dumps(truncated_messages, ensure_ascii=False)
+    byte_size = len(payload.encode('utf-8'))
+    approx_tokens = byte_size // 4
+    
+    if approx_tokens <= context_window:
+        return truncated_messages
+    
+    # 第三步：需要截断：保留第一条消息和最近的消息
+    print(f"⚠️ 上下文超限 ({approx_tokens:,} tokens > {context_window:,})，正在截断消息历史...")
+    
+    # 保留第一条消息（系统提示）
+    first_msg = truncated_messages[0]
+    remaining_msgs = truncated_messages[1:]
+    
+    # 从最新的消息开始保留，逐步向前添加直到接近 context_window
+    result: List[Dict[str, Any]] = [first_msg]
+    current_tokens = len(json.dumps(first_msg, ensure_ascii=False).encode('utf-8')) // 4
+    
+    # 从后向前遍历，添加最新消息
+    for msg in reversed(remaining_msgs):
+        msg_tokens = len(json.dumps(msg, ensure_ascii=False).encode('utf-8')) // 4
+        if current_tokens + msg_tokens <= context_window:
+            result.insert(1, msg)  # 插入到第一条消息之后
+            current_tokens += msg_tokens
+        else:
+            break
+    
+    # 打印截断信息
+    removed_count = len(truncated_messages) - len(result)
+    final_tokens = len(json.dumps(result, ensure_ascii=False).encode('utf-8')) // 4
+    print(f"✅ 截断完成：保留 {len(result)} 条消息，删除 {removed_count} 条历史消息 "
+          f"(≈{final_tokens:,} tokens)")
+    
+    return result
+
+
 def _create_text_model(text_model: ModelInfo) -> Any:
     """创建语言模型实例"""
     model = text_model.get('model')
@@ -433,6 +594,10 @@ async def langgraph_multi_agent(
         # 将相对图片 URL（/api/file/... 或 /api/material/serve/...）展开为
         # 外部可访问的绝对 URL，供远端模型 API（如 cfgpu）使用
         model_messages = _expand_image_urls(fixed_messages)
+        
+        # 截断消息历史以避免超过上下文窗口限制
+        model_messages = _truncate_messages_by_context_window(model_messages)
+        
         _log_payload_size(model_messages)
 
         processor = StreamProcessor(

@@ -29,12 +29,31 @@ class StreamProcessor:
 
         compiled_swarm = swarm.compile()
 
-        async for chunk in compiled_swarm.astream(
-            {"messages": messages},
-            config=context,
-            stream_mode=["messages", "custom", 'values']
-        ):
-            await self._handle_chunk(chunk)
+        try:
+            async for chunk in compiled_swarm.astream(
+                {"messages": messages},
+                config=context,
+                stream_mode=["messages", "custom", 'values']
+            ):
+                await self._handle_chunk(chunk)
+        except TypeError as e:
+            # Handle API response errors (e.g., 'NoneType' object is not iterable)
+            if "'NoneType' object is not iterable" in str(e):
+                error_msg = (
+                    "API returned an invalid response (choices is None). "
+                    "This usually indicates:\n"
+                    "1. API rate limiting or server error\n"
+                    "2. Invalid API key or authentication failure\n"
+                    "3. Network timeout or connection issue\n"
+                    "Please check your API configuration and try again."
+                )
+                print(f"❌ {error_msg}")
+                await self.websocket_service(self.session_id, {
+                    'type': 'error',
+                    'error': error_msg
+                })
+                return
+            raise
 
         # 发送完成事件
         await self.websocket_service(self.session_id, {
