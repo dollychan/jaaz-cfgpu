@@ -97,12 +97,18 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
     }[]
   >([])
   const [isFocused, setIsFocused] = useState(false)
-  const [selectedAspectRatio, setSelectedAspectRatio] = useState<string>('auto')
-  const [quantity, setQuantity] = useState<number>(1)
+  const [selectedAspectRatio, setSelectedAspectRatio] = useState<string>(
+    () => localStorage.getItem('chat_aspect_ratio') ?? 'auto'
+  )
+  const [quantity, setQuantity] = useState<number>(
+    () => Number(localStorage.getItem('chat_quantity') ?? '1')
+  )
   const [showQuantitySlider, setShowQuantitySlider] = useState(false)
   const quantitySliderRef = useRef<HTMLDivElement>(null)
   const MAX_QUANTITY = 30
-  const [duration, setDuration] = useState<number>(5)
+  const [duration, setDuration] = useState<number>(
+    () => Number(localStorage.getItem('chat_duration') ?? '5')
+  )
   const [showDurationSlider, setShowDurationSlider] = useState(false)
   const durationSliderRef = useRef<HTMLDivElement>(null)
   const MIN_DURATION = 4
@@ -857,7 +863,10 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
               {['auto', '1:1', '4:3', '3:4', '16:9', '9:16'].map((ratio) => (
                 <DropdownMenuItem
                   key={ratio}
-                  onClick={() => setSelectedAspectRatio(ratio)}
+                  onClick={() => {
+                    setSelectedAspectRatio(ratio)
+                    localStorage.setItem('chat_aspect_ratio', ratio)
+                  }}
                   className="flex items-center justify-between"
                 >
                   <span>{ratio}</span>
@@ -908,7 +917,11 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
                         min="1"
                         max={MAX_QUANTITY}
                         value={quantity}
-                        onChange={(e) => setQuantity(Number(e.target.value))}
+                        onChange={(e) => {
+                          const v = Number(e.target.value)
+                          setQuantity(v)
+                          localStorage.setItem('chat_quantity', String(v))
+                        }}
                         className="flex-1 h-2 bg-muted rounded-lg appearance-none cursor-pointer
                                   [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4
                                   [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary
@@ -969,7 +982,11 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
                         max={MAX_DURATION}
                         step={1}
                         value={duration}
-                        onChange={(e) => setDuration(Number(e.target.value))}
+                        onChange={(e) => {
+                          const v = Number(e.target.value)
+                          setDuration(v)
+                          localStorage.setItem('chat_duration', String(v))
+                        }}
                         className="flex-1 h-2 bg-muted rounded-lg appearance-none cursor-pointer
                                   [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4
                                   [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary
