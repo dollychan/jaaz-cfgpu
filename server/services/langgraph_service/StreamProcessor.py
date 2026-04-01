@@ -14,7 +14,7 @@ class StreamProcessor:
         self.db_service = db_service
         self.websocket_service = websocket_service
         self.tool_calls: List[ToolCall] = []
-        self.last_saved_message_index = 0
+        self.last_saved_message_index = -1
         self.last_streaming_tool_call_id: Optional[str] = None
 
     async def process_stream(self, swarm: StateGraph, messages: List[Dict[str, Any]], context: Dict[str, Any]) -> None:
@@ -25,18 +25,11 @@ class StreamProcessor:
             messages: 消息列表（可能已截断，仅用于发送给模型）
             context: 上下文信息
         """
-        # 重要：从数据库获取已保存的消息数量，而不是基于输入消息数量
-        # 因为输入消息可能已被截断，但数据库中保存的是完整的消息历史
-        # 这样可以确保新消息正确追加到数据库，而不会覆盖或遗漏
+        # 用 DB 中的实际条数确定起始索引，而非输入消息数量。
+        # 输入消息可能因上下文截断而变短，若以其长度为基准会导致已有消息被重复写入。
         saved_messages = await self.db_service.get_chat_history(self.session_id)
         self.last_saved_message_index = len(saved_messages) - 1
-        
-        # 如果数据库中没有消息（新会话），则使用输入消息的索引
-        if self.last_saved_message_index < 0:
-            self.last_saved_message_index = len(messages) - 1
-            print(f"📝 新会话，消息索引从 {self.last_saved_message_index} 开始")
-        else:
-            print(f"📝 已有会话，数据库中有 {len(saved_messages)} 条消息，新消息从索引 {self.last_saved_message_index + 1} 开始")
+        print(f"📝 DB 已有 {len(saved_messages)} 条消息，新消息从索引 {self.last_saved_message_index + 1} 开始")
 
         compiled_swarm = swarm.compile()
 
@@ -95,15 +88,13 @@ class StreamProcessor:
             'messages': oai_messages
         })
 
-        # 保存新消息到数据库
         for i in range(self.last_saved_message_index + 1, len(oai_messages)):
             new_message = oai_messages[i]
-            if len(oai_messages) > 0:  # 确保有消息才保存
-                await self.db_service.create_message(
-                    self.session_id,
-                    new_message.get('role', 'user'),
-                    json.dumps(new_message)
-                )
+            await self.db_service.create_message(
+                self.session_id,
+                new_message.get('role', 'user'),
+                json.dumps(new_message)
+            )
             self.last_saved_message_index = i
 
     async def _handle_message_chunk(self, ai_message_chunk: AIMessageChunk) -> None:

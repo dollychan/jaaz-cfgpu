@@ -11,8 +11,9 @@ class LLMConfig(BaseModel):
 class ConfigUpdate(BaseModel):
     llm: LLMConfig
 
-class ModelInfo(TypedDict):
+class ModelInfo(TypedDict, total=False):
     provider: str
     model: str # For tool type, it is the function name
     url: str
     type: Literal['text', 'image', 'tool', 'video']
+    api_key: str  # Optional: overrides config_service lookup when set
