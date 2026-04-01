@@ -215,7 +215,11 @@ def compress_image(img: Image.Image, max_size_mb: float) -> bytes:
 # 文件下载接口
 @router.get("/file/{file_id}")
 async def get_file(file_id: str):
-    file_path = os.path.join(FILES_DIR, f'{file_id}')
+    # 防止路径穿越：../../../etc/passwd
+    real_base = os.path.realpath(FILES_DIR)
+    file_path = os.path.realpath(os.path.join(real_base, file_id))
+    if not file_path.startswith(real_base + os.sep) and file_path != real_base:
+        raise HTTPException(status_code=403, detail="Access denied")
     print('🦄get_file file_path', file_path)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found")

@@ -13,16 +13,34 @@ router = APIRouter(prefix="/api")
 
 WORKSPACE_ROOT = os.path.join(USER_DATA_DIR, "workspace")
 
+
+def _assert_within(base: str, user_path: str) -> str:
+    """解析 user_path 相对于 base 的真实路径，并断言结果在 base 目录以内。
+
+    同时防御两种路径穿越方式：
+    - 相对路径穿越：../../etc/passwd
+    - 绝对路径直打：os.path.join 在第二个参数为绝对路径时会丢弃 base
+
+    返回解析后的完整绝对路径，调用方直接用于文件操作。
+    """
+    real_base = os.path.realpath(base)
+    full = os.path.realpath(os.path.join(real_base, user_path))
+    if full != real_base and not full.startswith(real_base + os.sep):
+        raise HTTPException(status_code=403, detail="Access denied: path outside allowed directory")
+    return full
+
 @router.post("/update_file")
 async def update_file(request: Request):
     try:
         data = await request.json()
         path = data["path"]
-        full_path = os.path.join(WORKSPACE_ROOT, path)
+        full_path = _assert_within(WORKSPACE_ROOT, path)
         content = data["content"]
         with open(full_path, "w") as f:
             f.write(content)
         return {"success": True}
+    except HTTPException:
+        raise
     except Exception as e:
         return {"error": str(e), "path": path}
 
@@ -30,6 +48,7 @@ async def update_file(request: Request):
 async def create_file(request: Request):
     data = await request.json()
     rel_dir = data["rel_dir"]
+    _assert_within(WORKSPACE_ROOT, rel_dir)
     path = os.path.join(WORKSPACE_ROOT, rel_dir, 'Untitled.md')
     # Split the path into directory, filename, and extension
     dir_name, base_name = os.path.split(path)
@@ -52,7 +71,8 @@ async def create_file(request: Request):
 async def delete_file(request: Request):
     data = await request.json()
     path = data["path"]
-    os.remove(path)
+    full_path = _assert_within(WORKSPACE_ROOT, path)
+    os.remove(full_path)
     return {"success": True}
 
 @router.post("/rename_file")
@@ -60,14 +80,19 @@ async def rename_file(request: Request):
     try:
         data = await request.json()
         old_path = data["old_path"]
-        old_path = os.path.join(WORKSPACE_ROOT, old_path)
-        new_title = data["new_title"]
-        if os.path.exists(old_path):
-            new_path = os.path.join(os.path.dirname(old_path), new_title)
-            os.rename(old_path, new_path)
+        full_old_path = _assert_within(WORKSPACE_ROOT, old_path)
+        # 只取文件名部分，防止 new_title 含路径分隔符穿越到父目录
+        new_title = os.path.basename(data["new_title"])
+        if not new_title:
+            raise HTTPException(status_code=400, detail="Invalid new_title")
+        if os.path.exists(full_old_path):
+            new_path = os.path.join(os.path.dirname(full_old_path), new_title)
+            os.rename(full_old_path, new_path)
             return {"success": True, "path": new_path}
         else:
-            return {"error": f"File {old_path} does not exist", "path": old_path}
+            return {"error": f"File {full_old_path} does not exist", "path": full_old_path}
+    except HTTPException:
+        raise
     except Exception as e:
         traceback.print_exc()
         return {"error": str(e)}
@@ -77,20 +102,22 @@ async def read_file(request: Request):
     try:
         data = await request.json()
         path = data["path"]
-        full_path = os.path.join(WORKSPACE_ROOT, path)
+        full_path = _assert_within(WORKSPACE_ROOT, path)
         if os.path.exists(full_path):
             with open(full_path, "r") as f:
                 content = f.read()
                 return {"content": content}
         else:
             return {"error": f"File {path} does not exist", "path": path}
+    except HTTPException:
+        raise
     except Exception as e:
         return {"error": str(e), "path": path}
 
 @router.get("/list_files_in_dir")
 async def list_files_in_dir(rel_path: str):
     try:
-        full_path = os.path.join(WORKSPACE_ROOT, rel_path)
+        full_path = _assert_within(WORKSPACE_ROOT, rel_path)
         files = os.listdir(full_path)
         file_nodes = []
         for file in files:
