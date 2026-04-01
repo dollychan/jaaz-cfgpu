@@ -91,12 +91,16 @@ def _create_text_model(text_model: ModelInfo) -> Any:
     else:
         http_client = HttpClient.create_sync_client()
         http_async_client = HttpClient.create_async_client()
+        # cfgpu endpoints don't support SSE streaming; disable to avoid
+        # "No generations found in stream" from langchain-core's async path
+        use_streaming = provider != 'cfgpu'
         return ChatOpenAI(
             model=model,
             api_key=api_key,  # type: ignore
             timeout=300,
             base_url=url,
             temperature=0,
+            streaming=use_streaming,
             http_client=http_client,
             http_async_client=http_async_client
         )
