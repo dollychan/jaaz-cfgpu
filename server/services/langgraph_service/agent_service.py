@@ -9,8 +9,6 @@ from langgraph.prebuilt import create_react_agent  # type: ignore
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage
-from langchain_core.messages import AIMessageChunk
-from langchain_core.outputs import ChatGenerationChunk
 from langchain_core.tools import tool as lc_tool  # type: ignore
 from services.websocket_service import send_to_websocket  # type: ignore
 from services.config_service import config_service
@@ -77,32 +75,6 @@ def _fix_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return fixed_messages
 
 
-class _NonStreamingChatOpenAI(ChatOpenAI):
-    """ChatOpenAI for providers that don't support SSE streaming (e.g. cfgpu).
-
-    langchain-core 0.3+ calls _astream in the async path regardless of the
-    `streaming` flag (it checks isasyncgeneratorfunction).  When the endpoint
-    doesn't return SSE events the stream is empty and generate_from_stream
-    raises ValueError.  Overriding _astream to call _agenerate internally
-    keeps everything working without real SSE support.
-    """
-
-    async def _astream(self, messages, stop=None, run_manager=None, **kwargs):
-        result = await self._agenerate(
-            messages, stop=stop, run_manager=run_manager, **kwargs
-        )
-        for gen in result.generations:
-            ai_msg = gen.message
-            yield ChatGenerationChunk(
-                message=AIMessageChunk(
-                    content=ai_msg.content or '',
-                    additional_kwargs=ai_msg.additional_kwargs or {},
-                    response_metadata=getattr(ai_msg, 'response_metadata', {}),
-                    tool_calls=list(getattr(ai_msg, 'tool_calls', []) or []),
-                )
-            )
-
-
 def _create_text_model(text_model: ModelInfo) -> Any:
     """创建语言模型实例"""
     model = text_model.get('model')
@@ -119,15 +91,18 @@ def _create_text_model(text_model: ModelInfo) -> Any:
     else:
         http_client = HttpClient.create_sync_client()
         http_async_client = HttpClient.create_async_client()
-        # cfgpu doesn't support SSE streaming; use subclass that overrides
-        # _astream to call _agenerate so langchain-core's async path works.
-        cls = _NonStreamingChatOpenAI if provider == 'cfgpu' else ChatOpenAI
-        return cls(
+        # cfgpu streaming mode ignores tools and returns plain text instead of
+        # tool_calls, causing generate_from_stream to get 0 valid chunks.
+        # disable_streaming="tool_calling" uses non-streaming _agenerate only
+        # when tools are bound, preserving token-by-token streaming for text.
+        disable_streaming = "tool_calling" if provider == 'cfgpu' else False
+        return ChatOpenAI(
             model=model,
             api_key=api_key,  # type: ignore
             timeout=300,
             base_url=url,
             temperature=0,
+            disable_streaming=disable_streaming,
             http_client=http_client,
             http_async_client=http_async_client
         )
