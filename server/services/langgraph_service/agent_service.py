@@ -222,6 +222,14 @@ def _create_text_model(text_model: ModelInfo) -> Any:
             base_url=url,
         )
     else:
+        # 验证 API key 是否存在
+        if not api_key or not api_key.strip():
+            raise ValueError(
+                f"API key is missing for provider '{provider}'. "
+                f"Please configure the API key in config.toml under [{provider}].api_key, "
+                f"or set it in settings.json builtin_model.api_key"
+            )
+        
         http_client = HttpClient.create_sync_client()
         http_async_client = HttpClient.create_async_client()
         # cfgpu streaming mode ignores tools and returns plain text instead of

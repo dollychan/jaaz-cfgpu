@@ -139,7 +139,12 @@ class ConfigService:
             for provider, provider_config in config.items():
                 if provider not in DEFAULT_PROVIDERS_CONFIG:
                     provider_config['is_custom'] = True
-                self.app_config[provider] = provider_config
+                # 合并而非替换：保留 DEFAULT_PROVIDERS_CONFIG 中的默认值（如 url），
+                # 只用 config.toml 中实际存在的字段覆盖，避免 url 等字段被意外清空
+                if provider in self.app_config:
+                    self.app_config[provider].update(provider_config)
+                else:
+                    self.app_config[provider] = provider_config
                 # image/video models are hardcoded in the default provider config
                 provider_models = DEFAULT_PROVIDERS_CONFIG.get(
                     provider, {}).get('models', {})
