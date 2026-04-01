@@ -774,7 +774,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
                 <Library className="size-4" />
               </Button>
             </PopoverTrigger>
-            <PopoverContent align="start" className="flex flex-col p-0 min-w-[18rem] min-h-[12rem] w-80 max-h-[32rem] resize overflow-auto">
+            <PopoverContent align="start" className="flex flex-col p-0 w-[24rem] h-[22rem] min-w-[18rem] min-h-[14rem] resize overflow-hidden">
               {/* Search input */}
               <div className="flex items-center gap-2 px-3 py-2 border-b shrink-0">
                 <Search className="size-4 shrink-0 text-muted-foreground" />
@@ -785,7 +785,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
                   className="h-7 border-0 p-0 text-sm shadow-none focus-visible:ring-0"
                 />
               </div>
-              {/* Grid */}
+              {/* Grid — scrollable */}
               <div className="overflow-y-auto flex-1 p-2">
                 {(() => {
                   const filtered = materialFiles.filter(
