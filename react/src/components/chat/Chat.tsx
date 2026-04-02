@@ -86,6 +86,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     initCanvas ? 'text' : false
   )
   const mergedToolCallIds = useRef<string[]>([])
+  // Number of messages in prev at the moment the user hits "Send".
+  // all_messages events whose length <= this value only echo (possibly truncated)
+  // history — no genuinely new agent responses yet. We skip those updates to
+  // avoid React key churn and insertBefore DOM crashes caused by context-window
+  // truncation making the server-side state shorter than the frontend's prev.
+  const preSendMessageCount = useRef(0)
 
   const ensureMessageUid = (message: MessageWithUid): MessageWithUid => {
     if (!message.__uid) {
@@ -443,6 +449,19 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       // We match by tool_call_id first (stable across concurrent events such as
       // handleToolCall appending a message just before all_messages arrives),
       // then fall back to positional index for non-tool-call messages.
+      //
+      // Guard: when the backend's context-window truncation reduces the message
+      // count, all_messages contains fewer messages than the frontend's prev.
+      // Replacing prev with this shorter list drops historical messages from the
+      // UI and causes key churn → insertBefore DOM crash.  Skip any all_messages
+      // event whose message count doesn't exceed the pre-send baseline; the
+      // individual streaming events (handleDelta / handleToolCall /
+      // handleToolCallResult) already keep the UI up-to-date for those rounds.
+      // mergeToolCallResult preserves length so data.messages.length is sufficient.
+      if (data.messages.length <= preSendMessageCount.current) {
+        scrollToBottom()
+        return
+      }
       setMessages((prev) => {
         // Build stable lookup: first tool_call id of each assistant message → __uid
         const uidByToolCallId = new Map<string, string>()
@@ -648,6 +667,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
   const onSendMessages = useCallback(
     (data: Message[], configs: { toolList: ToolInfo[] }) => {
+      preSendMessageCount.current = data.length
       setPending('text')
       setMessages(ensureMessagesUids(data))
 
