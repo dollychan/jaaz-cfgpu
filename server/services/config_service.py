@@ -63,7 +63,6 @@ DEFAULT_PROVIDERS_CONFIG: AppConfig = {
         'models': {
             'wan-video': {'type': 'video'},
             'wan-video-fast': {'type': 'video'},
-            'gpt-oss-120b': {'type': 'text'},
             'z-ai/glm-5': {'type': 'text'},
         },
         'url': 'https://www.cfgpu.com/userapi/v1/model/v1/',
