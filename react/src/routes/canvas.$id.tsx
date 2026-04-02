@@ -21,7 +21,6 @@ function Canvas() {
   const [canvas, setCanvas] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
-  const [canvasName, setCanvasName] = useState('')
   const [sessionList, setSessionList] = useState<Session[]>([])
   // initialVideos removed - using native Excalidraw embeddable elements instead
   const search = useSearch({ from: '/canvas/$id' }) as {
@@ -38,7 +37,6 @@ function Canvas() {
         const data = await getCanvas(id)
         if (mounted) {
           setCanvas(data)
-          setCanvasName(data.name)
           setSessionList(data.sessions)
           // Video elements now handled by native Excalidraw embeddable elements
         }
@@ -61,18 +59,13 @@ function Canvas() {
     }
   }, [id])
 
-  const handleNameSave = async () => {
-    await renameCanvas(id, canvasName)
-  }
-
   return (
     <CanvasProvider>
       <div className='flex flex-col w-screen h-screen'>
         <CanvasHeader
-          canvasName={canvasName}
+          initialName={canvas?.name ?? ''}
           canvasId={id}
-          onNameChange={setCanvasName}
-          onNameSave={handleNameSave}
+          onNameSave={(name) => renameCanvas(id, name)}
         />
         <ResizablePanelGroup
           direction='horizontal'
