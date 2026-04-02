@@ -16,6 +16,11 @@ class StreamProcessor:
         self.tool_calls: List[ToolCall] = []
         self.last_saved_message_index = -1
         self.last_streaming_tool_call_id: Optional[str] = None
+        # Set in process_stream; used by _handle_values_chunk for correct saving.
+        # When context-window truncation reduces the input to K < M+1 messages,
+        # new agent responses start at oai_messages[K], not at the DB count index M+1.
+        self._langgraph_initial_count: int = 0
+        self._new_responses_saved: int = 0
 
     async def process_stream(self, swarm: StateGraph, messages: List[Dict[str, Any]], context: Dict[str, Any]) -> None:
         """处理整个流式响应
@@ -29,7 +34,9 @@ class StreamProcessor:
         # 输入消息可能因上下文截断而变短，若以其长度为基准会导致已有消息被重复写入。
         saved_messages = await self.db_service.get_chat_history(self.session_id)
         self.last_saved_message_index = len(saved_messages) - 1
-        print(f"📝 DB 已有 {len(saved_messages)} 条消息，新消息从索引 {self.last_saved_message_index + 1} 开始")
+        self._langgraph_initial_count = len(messages)
+        self._new_responses_saved = 0
+        print(f"📝 DB 已有 {len(saved_messages)} 条消息，LangGraph 输入 {len(messages)} 条，新消息从索引 {self.last_saved_message_index + 1} 开始")
 
         compiled_swarm = swarm.compile()
 
@@ -88,14 +95,18 @@ class StreamProcessor:
             'messages': oai_messages
         })
 
-        for i in range(self.last_saved_message_index + 1, len(oai_messages)):
-            new_message = oai_messages[i]
+        # New agent responses start at oai_messages[_langgraph_initial_count].
+        # Using DB count (last_saved_message_index + 1) as the start index fails
+        # when context truncation makes K < M+1: the range becomes empty and
+        # responses are never written to DB.
+        new_responses = oai_messages[self._langgraph_initial_count:]
+        for msg in new_responses[self._new_responses_saved:]:
             await self.db_service.create_message(
                 self.session_id,
-                new_message.get('role', 'user'),
-                json.dumps(new_message)
+                msg.get('role', 'user'),
+                json.dumps(msg)
             )
-            self.last_saved_message_index = i
+            self._new_responses_saved += 1
 
     async def _handle_message_chunk(self, ai_message_chunk: AIMessageChunk) -> None:
         """处理消息类型的 chunk"""
