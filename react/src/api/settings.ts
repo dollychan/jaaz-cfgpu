@@ -211,7 +211,11 @@ export const uploadMaterialApi = async (file: File) => {
     const err = await response.json().catch(() => ({ detail: response.statusText }))
     throw new Error(err.detail || 'Upload failed')
   }
-  return response.json()
+  const data = await response.json()
+  if (!data.asset_id) {
+    throw new Error('上传失败：未获得 Asset ID，请检查 CFGPU 配置及 JAAZ_SERVER_URL')
+  }
+  return data
 }
 
 export const getMaterialFilesApi = async () => {
