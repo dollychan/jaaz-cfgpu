@@ -43,9 +43,17 @@ class OpenAIImageProvider(ImageProviderBase):
             # Determine if this is an edit operation or generation
             if input_images and len(input_images) > 0:
                 # Image editing mode
-                input_image_path = input_images[0]
-                # For OpenAI, input_image should be the file path
-                full_path = os.path.join(FILES_DIR, input_image_path)
+                input_image_ref = input_images[0]
+                # Resolve to local file path: strip server base or API prefix if present
+                if input_image_ref.startswith(('http://', 'https://')):
+                    # Extract filename from URL and look up in FILES_DIR
+                    fname = input_image_ref.rstrip('/').split('/')[-1]
+                    full_path = os.path.join(FILES_DIR, fname)
+                elif input_image_ref.startswith('/api/file/'):
+                    fname = input_image_ref.removeprefix('/api/file/')
+                    full_path = os.path.join(FILES_DIR, fname)
+                else:
+                    full_path = os.path.join(FILES_DIR, input_image_ref)
 
                 with open(full_path, 'rb') as image_file:
                     result = self.client.images.edit(

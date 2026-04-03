@@ -68,7 +68,7 @@ async def generate_image_with_provider(
     if input_images:
         processed_input_images = []
         for image_path in input_images:
-            processed_image = await process_input_image(image_path)
+            processed_image = process_input_image(image_path)
             if processed_image:
                 processed_input_images.append(processed_image)
 

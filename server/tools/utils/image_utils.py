@@ -134,49 +134,54 @@ async def get_image_info_and_save(
 # Notification functions moved to tools/image_generation/image_canvas_utils.py
 
 
-async def process_input_image(input_image: str | None) -> str | None:
+def process_input_image(input_image: str | None) -> str | None:
     """
-    Process input image and convert to base64 format
+    Resolve an input image reference to a URL accessible by external APIs.
 
-    Args:
-        input_image: Image file path
-
-    Returns:
-        Base64 encoded image with data URL, or None if no image
+    Mirrors the same strategy as video_generation_core._resolve_local_to_server_url:
+    - http/https/data: URLs → returned as-is
+    - /api/file/... or /api/material/serve/... (relative API paths) →
+        prefixed with JAAZ_SERVER_URL
+    - asset-xxx / asset://xxx (material library assets) →
+        returned as asset://xxx for CFGPU native asset references
+    - bare local filename → resolved via FILES_DIR scan →
+        JAAZ_SERVER_URL/api/file/<fname>
     """
     if not input_image:
         return None
 
-    # Asset IDs from the material library (e.g. asset-20260224200602-qn7wr)
-    # are passed directly as asset:// URLs — no local file conversion needed.
+    # Already absolute HTTP URL or data URI
+    if input_image.startswith(('http://', 'https://', 'data:')):
+        return input_image
+
+    # Material library asset → asset:// protocol (CFGPU native reference)
     if input_image.startswith('asset-') or input_image.startswith('asset://'):
         asset_id = input_image.removeprefix('asset://')
-        return f"asset://{asset_id}"
+        url = f"asset://{asset_id}"
+        print(f"🔗 Image input material asset '{input_image}' → {url}")
+        return url
 
+    server_base = os.environ.get(
+        "JAAZ_SERVER_URL",
+        f"http://127.0.0.1:{os.environ.get('DEFAULT_PORT', '57988')}"
+    ).rstrip("/")
+
+    # Relative API path (e.g. /api/file/xxx or /api/material/serve/xxx)
+    if input_image.startswith('/api/'):
+        url = f"{server_base}{input_image}"
+        print(f"🔗 Image input API path '{input_image}' → {url}")
+        return url
+
+    # Bare local filename — scan FILES_DIR for a match
+    ref_stem = os.path.splitext(input_image)[0]
     try:
-        full_path = os.path.join(FILES_DIR, input_image)
-        if not os.path.exists(full_path):
-            print(f"Warning: Image file not found: {full_path}")
-            return None
+        for fname in os.listdir(FILES_DIR):
+            if fname == input_image or os.path.splitext(fname)[0] == ref_stem:
+                url = f"{server_base}/api/file/{fname}"
+                print(f"🔗 Image input local file '{input_image}' → {url}")
+                return url
+    except OSError:
+        pass
 
-        image = Image.open(full_path)
-        ext = os.path.splitext(input_image)[1].lower()
-        mime_type_map = {
-            '.png': 'image/png',
-            '.jpg': 'image/jpeg',
-            '.jpeg': 'image/jpeg',
-            '.webp': 'image/webp'
-        }
-        mime_type = mime_type_map.get(ext, 'image/jpeg')
-
-        with BytesIO() as output:
-            image.save(output, format=str(mime_type.split('/')[1]).upper())
-            compressed_data = output.getvalue()
-            b64_data = base64.b64encode(compressed_data).decode('utf-8')
-
-        data_url = f"data:{mime_type};base64,{b64_data}"
-        return data_url
-
-    except Exception as e:
-        print(f"Error processing image {input_image}: {e}")
-        return None
+    print(f"⚠️ Image input '{input_image}' not found in FILES_DIR, passing as-is")
+    return input_image
