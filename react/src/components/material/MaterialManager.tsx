@@ -429,7 +429,7 @@ export default function MaterialManager() {
         isOpen: true,
         filePath: file.path,
         fileName: file.name,
-        fileType: file.file_type,
+        fileType: file.type,
       })
     }
   }, [])
@@ -515,7 +515,7 @@ export default function MaterialManager() {
       if (result.success) {
         myAssetsPath.current = result.path
         const myAssetsFolder: FileSystemItem = {
-          name: t('canvas:myAssets', 'My Assets'),
+          name: t('canvas:myAssets', 'My Products'),
           path: result.path,
           type: 'folder',
           mtime: Date.now() / 1000,
@@ -1174,7 +1174,7 @@ export default function MaterialManager() {
             className="w-full justify-start"
           >
             <Star className="w-4 h-4 mr-2" />
-            {t('canvas:myAssets', 'My Assets')}
+            {t('canvas:myAssets', 'My Products')}
           </Button>
           <Button
             variant={activeTab === 'materialLibrary' ? 'default' : 'ghost'}
@@ -1182,7 +1182,7 @@ export default function MaterialManager() {
             className="w-full justify-start"
           >
             <Library className="w-4 h-4 mr-2" />
-            素材资产库
+            {t('canvas:materialLibrary', 'My Assets')}
           </Button>
         </div>
       </div>
@@ -1199,7 +1199,7 @@ export default function MaterialManager() {
               <div className="flex items-center gap-2">
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
                   {activeTab === 'materialLibrary'
-                    ? '素材资产库'
+                    ? t('canvas:materialLibrary', 'My Assets')
                     : selectedFolder
                       ? selectedFolder.name
                       : t('canvas:selectAFolder', 'Select a folder')}

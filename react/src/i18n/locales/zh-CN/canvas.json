@@ -46,7 +46,8 @@
     "addToChat": "添加到聊天",
     "magicGenerate": "✨ 魔法生成"
   },
-  "myAssets": "我的素材",
+  "myAssets": "资产库",
+  "materialLibrary": "素材库",
   "selectAFolder": "选择文件夹",
   "selectAFolderDescription": "选择一个文件夹以查看其中的图片和视频",
   "noMediaFiles": "无媒体文件",
