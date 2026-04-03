@@ -48,6 +48,8 @@
   },
   "myAssets": "资产库",
   "materialLibrary": "素材库",
+  "uploadAsset": "上传素材",
+  "uploading": "上传中...",
   "selectAFolder": "选择文件夹",
   "selectAFolderDescription": "选择一个文件夹以查看其中的图片和视频",
   "noMediaFiles": "无媒体文件",

@@ -316,6 +316,7 @@ export default function MaterialManager() {
   const [materialFiles, setMaterialFiles] = useState<Array<{
     name: string; asset_id: string | null; display_name: string;
     path: string; size: number; mtime: number; file_type: string; url: string
+    disk_name?: string | null
     status?: string | null   // 'Processing' | 'Active' | 'Failed' | null
   }>>([])
   const [materialLoading, setMaterialLoading] = useState(false)
@@ -424,7 +425,7 @@ export default function MaterialManager() {
   )
 
   const handlePreviewFile = useCallback((file: FileSystemItem) => {
-    if (file.is_media) {
+    if (['image', 'video', 'audio'].includes(file.type)) {
       setPreviewModal({
         isOpen: true,
         filePath: file.path,
@@ -1241,7 +1242,7 @@ export default function MaterialManager() {
                     disabled={uploading}
                   >
                     <Upload className="w-4 h-4 mr-1" />
-                    {uploading ? '上传中...' : '上传素材'}
+                    {uploading ? t('canvas:uploading', 'Uploading...') : t('canvas:uploadAsset', 'Upload Asset')}
                   </Button>
                 </>
               )}
@@ -1279,7 +1280,7 @@ export default function MaterialManager() {
                     <div
                       key={file.path}
                       className="group relative bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border border-gray-200 dark:border-gray-700 cursor-pointer"
-                      onClick={() => setPreviewModal({ isOpen: true, filePath: file.url || file.path, fileName: file.name, fileType: file.file_type })}
+                      onClick={() => setPreviewModal({ isOpen: true, filePath: file.disk_name ? `/api/material/serve/${file.disk_name}` : (file.url || ''), fileName: file.name, fileType: file.file_type })}
                     >
                       <div className="aspect-square bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 flex items-center justify-center overflow-hidden relative">
                         {file.file_type === 'image' ? (

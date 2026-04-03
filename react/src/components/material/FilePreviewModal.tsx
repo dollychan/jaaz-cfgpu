@@ -45,7 +45,7 @@ export default function FilePreviewModal({
   const [zoom, setZoom] = useState(1)
   const [showInfo, setShowInfo] = useState(false)
 
-  const mediaSrc = filePath.startsWith('http') ? filePath : getFileServiceUrl(filePath)
+  const mediaSrc = (filePath.startsWith('http') || filePath.startsWith('/api/')) ? filePath : getFileServiceUrl(filePath)
 
   useEffect(() => {
     if (isOpen && filePath && !filePath.startsWith('http')) {
