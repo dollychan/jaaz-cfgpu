@@ -117,8 +117,13 @@ async def _create_asset(public_url: str, asset_type: str) -> dict:
         "assetType": asset_type,
         "projectName": project_name,
     }
+    print(f"📤 CFGPU CreateAsset request → {url}")
+    print(f"    payload : {payload}")
+    print(f"    headers : Authorization=Bearer ***{api_key[-4:]}, Content-Type=application/json")
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(url, headers=headers, json=payload)
+        print(f"📥 CFGPU CreateAsset response status: {response.status_code}")
+        print(f"    body: {response.text}")
         response.raise_for_status()
         result = response.json()
 
