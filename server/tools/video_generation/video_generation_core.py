@@ -55,15 +55,21 @@ def _resolve_local_to_server_url(
       allowed_extensions when provided (None = accept any extension).
     - Falls back to the original ref with a warning if not found.
     """
+    # 1. Full HTTP URL → use as-is
     if ref.startswith(('http://', 'https://', 'data:')):
         return ref
-    # Asset IDs from the material library (e.g. asset-20260224200602-qn7wr)
-    # are passed as asset:// URLs directly to the API.
+    # 2. Material library asset → asset:// protocol (CFGPU native reference)
     if ref.startswith('asset://') or ref.startswith('asset-'):
         asset_id = ref.removeprefix('asset://')
         asset_url = f"asset://{asset_id}"
         print(f"🔗 Material asset '{ref}' → {asset_url}")
         return asset_url
+    # 3. Relative API path (e.g. /api/file/xxx or /api/material/serve/xxx)
+    #    → prefix with JAAZ_SERVER_URL so external APIs can reach it
+    if ref.startswith('/api/'):
+        server_url = f"{_get_server_base_url()}{ref}"
+        print(f"🔗 Resolved {label} API path '{ref}' → {server_url}")
+        return server_url
     ref_stem = os.path.splitext(ref)[0]
     for fname in os.listdir(FILES_DIR):
         if fname == ref or os.path.splitext(fname)[0] == ref_stem:

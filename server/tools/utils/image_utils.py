@@ -7,7 +7,7 @@ import json
 from typing import Any, Optional, Tuple
 from nanoid import generate
 from utils.http_client import HttpClient
-from services.config_service import FILES_DIR
+from services.config_service import FILES_DIR, MATERIALS_DIR
 
 
 def generate_image_id() -> str:
@@ -136,43 +136,52 @@ async def get_image_info_and_save(
 
 def process_input_image(input_image: str | None) -> str | None:
     """
-    Resolve an input image reference to a URL accessible by external APIs.
+    Resolve an input image reference to an HTTP URL accessible by external APIs.
 
-    Mirrors the same strategy as video_generation_core._resolve_local_to_server_url:
-    - http/https/data: URLs → returned as-is
-    - /api/file/... or /api/material/serve/... (relative API paths) →
-        prefixed with JAAZ_SERVER_URL
-    - asset-xxx / asset://xxx (material library assets) →
-        returned as asset://xxx for CFGPU native asset references
-    - bare local filename → resolved via FILES_DIR scan →
-        JAAZ_SERVER_URL/api/file/<fname>
+    Three supported forms:
+    1. Full HTTP URL (http/https)  → use as-is
+    2. Relative API path (/api/file/xxx or /api/material/serve/xxx)
+                                   → prefix with JAAZ_SERVER_URL
+    3. Material asset (asset-xxx / asset://asset-xxx)
+                                   → scan MATERIALS_DIR for the disk file,
+                                     return JAAZ_SERVER_URL/api/material/serve/<disk_name>
+                                     (image APIs don't support the asset:// protocol)
+    4. Bare local filename          → scan FILES_DIR,
+                                     return JAAZ_SERVER_URL/api/file/<fname>
     """
     if not input_image:
         return None
 
-    # Already absolute HTTP URL or data URI
-    if input_image.startswith(('http://', 'https://', 'data:')):
+    # 1. Full HTTP URL
+    if input_image.startswith(('http://', 'https://')):
         return input_image
-
-    # Material library asset → asset:// protocol (CFGPU native reference)
-    if input_image.startswith('asset-') or input_image.startswith('asset://'):
-        asset_id = input_image.removeprefix('asset://')
-        url = f"asset://{asset_id}"
-        print(f"🔗 Image input material asset '{input_image}' → {url}")
-        return url
 
     server_base = os.environ.get(
         "JAAZ_SERVER_URL",
         f"http://127.0.0.1:{os.environ.get('DEFAULT_PORT', '57988')}"
     ).rstrip("/")
 
-    # Relative API path (e.g. /api/file/xxx or /api/material/serve/xxx)
+    # 2. Relative API path
     if input_image.startswith('/api/'):
         url = f"{server_base}{input_image}"
         print(f"🔗 Image input API path '{input_image}' → {url}")
         return url
 
-    # Bare local filename — scan FILES_DIR for a match
+    # 3. Material library asset → resolve to /api/material/serve/<disk_name>
+    if input_image.startswith('asset-') or input_image.startswith('asset://'):
+        asset_stem = os.path.splitext(input_image.removeprefix('asset://'))[0]
+        try:
+            for fname in os.listdir(MATERIALS_DIR):
+                if os.path.splitext(fname)[0] == asset_stem:
+                    url = f"{server_base}/api/material/serve/{fname}"
+                    print(f"🔗 Image input material asset '{input_image}' → {url}")
+                    return url
+        except OSError:
+            pass
+        print(f"⚠️ Material asset '{input_image}' not found in MATERIALS_DIR, skipping")
+        return None
+
+    # 4. Bare local filename — scan FILES_DIR
     ref_stem = os.path.splitext(input_image)[0]
     try:
         for fname in os.listdir(FILES_DIR):
@@ -183,5 +192,5 @@ def process_input_image(input_image: str | None) -> str | None:
     except OSError:
         pass
 
-    print(f"⚠️ Image input '{input_image}' not found in FILES_DIR, passing as-is")
+    print(f"⚠️ Image input '{input_image}' not found, passing as-is")
     return input_image
