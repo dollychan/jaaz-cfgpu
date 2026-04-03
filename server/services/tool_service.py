@@ -133,19 +133,19 @@ TOOL_MAPPING: Dict[str, ToolInfo] = {
         "tool_function": edit_image_by_doubao_seededit_3_volces,
     },
     "generate_image_by_doubao_seedream_4_0_cfgpu": {
-        "display_name": "Doubao Seedream 4.0 by CFGPU",
+        "display_name": "Doubao Seedream 4.0",
         "type": "image",
         "provider": "cfgpu",
         "tool_function": generate_image_by_doubao_seedream_4_0_cfgpu,
     },
     "generate_image_by_doubao_seedream_4_5_cfgpu": {
-        "display_name": "Doubao Seedream 4.5 by CFGPU",
+        "display_name": "Doubao Seedream 4.5",
         "type": "image",
         "provider": "cfgpu",
         "tool_function": generate_image_by_doubao_seedream_4_5_cfgpu,
     },
     "generate_image_by_doubao_seedream_5_0_cfgpu": {
-        "display_name": "Doubao Seedream 5.0 by CFGPU",
+        "display_name": "Doubao Seedream 5.0",
         "type": "image",
         "provider": "cfgpu",
         "tool_function": generate_image_by_doubao_seedream_5_0_cfgpu,
@@ -193,13 +193,13 @@ TOOL_MAPPING: Dict[str, ToolInfo] = {
         "tool_function": generate_video_by_veo3_fast_jaaz,
     },
     "generate_video_by_cfgpu_seedance_2_0": {
-        "display_name": "Wan Video",
+        "display_name": "Doubao Seedance 2.0",
         "type": "video",
         "provider": "cfgpu",
         "tool_function": generate_video_by_cfgpu_seedance_2_0,
     },
     "generate_video_by_cfgpu_seedance_2_0_fast": {
-        "display_name": "Wan Video Fast",
+        "display_name": "Doubao Seedance 2.0 fast",
         "type": "video",
         "provider": "cfgpu",
         "tool_function": generate_video_by_cfgpu_seedance_2_0_fast,
