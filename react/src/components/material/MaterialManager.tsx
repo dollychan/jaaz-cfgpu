@@ -854,7 +854,7 @@ export default function MaterialManager() {
               ? 'border-blue-500 ring-2 ring-blue-200 dark:ring-blue-800'
               : 'border-gray-200 dark:border-gray-700'
               }`}
-            onClick={() => handleFileClick(file)}
+            onClick={() => handlePreviewFile(file)}
           >
             <div className="aspect-square bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 flex items-center justify-center overflow-hidden relative">
               {/* Model Badge for PNG images */}
@@ -1279,7 +1279,7 @@ export default function MaterialManager() {
                     <div
                       key={file.path}
                       className="group relative bg-white dark:bg-gray-800 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 overflow-hidden border border-gray-200 dark:border-gray-700 cursor-pointer"
-                      onClick={() => setPreviewModal({ isOpen: true, filePath: file.path, fileName: file.name, fileType: file.type })}
+                      onClick={() => setPreviewModal({ isOpen: true, filePath: file.url || file.path, fileName: file.name, fileType: file.file_type })}
                     >
                       <div className="aspect-square bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 flex items-center justify-center overflow-hidden relative">
                         {file.file_type === 'image' ? (

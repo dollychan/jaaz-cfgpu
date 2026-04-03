@@ -45,8 +45,10 @@ export default function FilePreviewModal({
   const [zoom, setZoom] = useState(1)
   const [showInfo, setShowInfo] = useState(false)
 
+  const mediaSrc = filePath.startsWith('http') ? filePath : getFileServiceUrl(filePath)
+
   useEffect(() => {
-    if (isOpen && filePath) {
+    if (isOpen && filePath && !filePath.startsWith('http')) {
       loadFileInfo()
     }
   }, [isOpen, filePath])
@@ -80,7 +82,7 @@ export default function FilePreviewModal({
 
   const handleDownload = () => {
     const link = document.createElement('a')
-    link.href = getFileServiceUrl(filePath)
+    link.href = mediaSrc
     link.download = fileName
     document.body.appendChild(link)
     link.click()
@@ -211,7 +213,7 @@ export default function FilePreviewModal({
 
             {!loading && !error && fileType === 'image' && (
               <img
-                src={getFileServiceUrl(filePath)}
+                src={mediaSrc}
                 alt={fileName}
                 className="max-w-full max-h-full object-contain transition-transform duration-200"
                 style={{ transform: `scale(${zoom})` }}
@@ -224,13 +226,24 @@ export default function FilePreviewModal({
 
             {!loading && !error && fileType === 'video' && (
               <video
-                src={getFileServiceUrl(filePath)}
+                src={mediaSrc}
                 controls
                 className="max-w-full max-h-full"
-                style={{ transform: `scale(${zoom})` }}
                 onError={(e) => {
                   console.error('Failed to load video:', e)
                   setError('视频加载失败')
+                }}
+              />
+            )}
+
+            {!loading && !error && fileType === 'audio' && (
+              <audio
+                src={mediaSrc}
+                controls
+                className="w-full"
+                onError={(e) => {
+                  console.error('Failed to load audio:', e)
+                  setError('音频加载失败')
                 }}
               />
             )}
