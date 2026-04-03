@@ -3,8 +3,8 @@ Image generation core module
 Contains the main orchestration logic for image generation across different providers
 """
 
+import os
 from typing import Optional, Dict, Any
-from common import DEFAULT_PORT
 from tools.utils.image_utils import process_input_image
 from ..image_providers.image_base_provider import ImageProviderBase
 
@@ -98,4 +98,5 @@ async def generate_image_with_provider(
         session_id, canvas_id, filename, mime_type, width, height
     )
 
-    return f"image generated successfully ![image_id: {filename}](http://localhost:{DEFAULT_PORT}{image_url})"
+    server_base = os.environ.get("JAAZ_SERVER_URL", f"http://127.0.0.1:{os.environ.get('DEFAULT_PORT', '57988')}").rstrip("/")
+    return f"image generated successfully ![image_id: {filename}]({server_base}{image_url})"
