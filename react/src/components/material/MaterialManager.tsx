@@ -1217,7 +1217,7 @@ export default function MaterialManager() {
               </div>
               <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                 {activeTab === 'materialLibrary'
-                  ? `${materialFiles.length} {t('canvas:mediaFiles', 'media files')}`
+                  ? `${materialFiles.length} ${t('canvas:mediaFiles', 'media files')}`
                   : selectedFolder
                     ? `${filteredMediaFiles.length} ${t('canvas:mediaFiles', 'media files')}`
                     : null}
