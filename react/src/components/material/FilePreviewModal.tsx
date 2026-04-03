@@ -48,7 +48,7 @@ export default function FilePreviewModal({
   const mediaSrc = (filePath.startsWith('http') || filePath.startsWith('/api/')) ? filePath : getFileServiceUrl(filePath)
 
   useEffect(() => {
-    if (isOpen && filePath && !filePath.startsWith('http')) {
+    if (isOpen && filePath && !filePath.startsWith('http') && !filePath.startsWith('/api/')) {
       loadFileInfo()
     }
   }, [isOpen, filePath])
@@ -90,8 +90,7 @@ export default function FilePreviewModal({
   }
 
   const handleCopyPath = () => {
-    navigator.clipboard.writeText(filePath)
-    // 可以添加提示消息
+    navigator.clipboard.writeText(fileName)
   }
 
   const handleZoomIn = () => {
@@ -166,7 +165,7 @@ export default function FilePreviewModal({
             <button
               onClick={handleCopyPath}
               className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-              title="复制路径"
+              title="复制文件名"
             >
               <Copy className="w-4 h-4" />
             </button>
@@ -266,10 +265,10 @@ export default function FilePreviewModal({
 
                 <div>
                   <label className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    路径
+                    文件名
                   </label>
                   <p className="text-sm text-gray-900 dark:text-white break-all">
-                    {fileInfo.path}
+                    {fileInfo.name}
                   </p>
                 </div>
 
