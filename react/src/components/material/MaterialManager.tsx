@@ -171,7 +171,11 @@ function ImageModelBadge({
     const loadModelInfo = async () => {
       setIsLoading(true)
       try {
-        const result = await readPNGMetadata(getFileServiceUrl(filePath))
+        const result = await readPNGMetadata(
+          filePath.startsWith('/api/') || filePath.startsWith('http')
+            ? filePath
+            : getFileServiceUrl(filePath)
+        )
         if (result.success && result.has_metadata) {
           // 尝试提取模型信息，优先级顺序
           const metadata = result.metadata
@@ -340,7 +344,10 @@ export default function MaterialManager() {
           resolve({ width: img.naturalWidth, height: img.naturalHeight })
         }
         img.onerror = reject
-        img.src = getFileServiceUrl(imagePath)
+        img.src =
+          imagePath.startsWith('/api/') || imagePath.startsWith('http')
+            ? imagePath
+            : getFileServiceUrl(imagePath)
       })
     },
     []
@@ -428,7 +435,7 @@ export default function MaterialManager() {
     if (['image', 'video', 'audio'].includes(file.type)) {
       setPreviewModal({
         isOpen: true,
-        filePath: file.path,
+        filePath: `/api/file/${file.name}`,
         fileName: file.name,
         fileType: file.type,
       })
@@ -452,19 +459,18 @@ export default function MaterialManager() {
 
       // 如果是图片，获取尺寸信息
       if (file.file_type === 'image') {
+        const fileUrl = `/api/file/${file.name}`
         try {
-          const dimensions = await getImageDimensions(file.path)
+          const dimensions = await getImageDimensions(fileUrl)
           fileDetails.dimensions = dimensions
         } catch (error) {
           console.error('Failed to get image dimensions:', error)
         }
 
         // 如果是PNG文件，获取metadata信息
-        if (file.path.toLowerCase().endsWith('.png')) {
+        if (file.name.toLowerCase().endsWith('.png')) {
           try {
-            const pngMetadata = await readPNGMetadata(
-              getFileServiceUrl(file.path)
-            )
+            const pngMetadata = await readPNGMetadata(fileUrl)
             fileDetails.pngMetadata = pngMetadata
           } catch (error) {
             console.error('Failed to get PNG metadata:', error)
@@ -484,7 +490,7 @@ export default function MaterialManager() {
       }
       eventBus.emit('Material::AddImagesToChat', [
         {
-          filePath: file.path,
+          filePath: `/api/file/${file.name}`,
           fileName: file.name,
           fileType: file.file_type,
           width: undefined,
@@ -859,11 +865,11 @@ export default function MaterialManager() {
           >
             <div className="aspect-square bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 flex items-center justify-center overflow-hidden relative">
               {/* Model Badge for PNG images */}
-              <ImageModelBadge filePath={file.path} fileName={file.name} />
+              <ImageModelBadge filePath={`/api/file/${file.name}`} fileName={file.name} />
 
               {file.type === 'image' ? (
                 <img
-                  src={getFileServiceUrl(file.path)}
+                  src={`/api/file/${file.name}`}
                   alt={file.name}
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                   onError={(e) => {
@@ -875,7 +881,7 @@ export default function MaterialManager() {
                 />
               ) : file.type === 'video' ? (
                 <VideoThumbnail
-                  src={getFileServiceUrl(file.path)}
+                  src={`/api/file/${file.name}`}
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                 />
               ) : (
@@ -934,7 +940,7 @@ export default function MaterialManager() {
                 file.name.toLowerCase().endsWith('.png') && (
                   <div className="absolute -top-1 -right-1 z-10">
                     <ImageModelBadge
-                      filePath={file.path}
+                      filePath={`/api/file/${file.name}`}
                       fileName={file.name}
                       variant="list"
                     />
@@ -943,7 +949,7 @@ export default function MaterialManager() {
 
               {file.type === 'image' ? (
                 <img
-                  src={getFileServiceUrl(file.path)}
+                  src={`/api/file/${file.name}`}
                   alt={file.name}
                   className="w-full h-full object-cover"
                   onError={(e) => {
@@ -955,7 +961,7 @@ export default function MaterialManager() {
                 />
               ) : file.type === 'video' ? (
                 <VideoThumbnail
-                  src={getFileServiceUrl(file.path)}
+                  src={`/api/file/${file.name}`}
                   className="w-full h-full object-cover"
                 />
               ) : (
@@ -1031,7 +1037,7 @@ export default function MaterialManager() {
             <div className="aspect-video bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden flex items-center justify-center">
               {selectedFile.type === 'image' ? (
                 <img
-                  src={getFileServiceUrl(selectedFile.path)}
+                  src={`/api/file/${selectedFile.name}`}
                   alt={selectedFile.name}
                   className="max-w-full max-h-full object-contain"
                 />
