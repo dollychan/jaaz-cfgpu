@@ -55,12 +55,15 @@ class StreamProcessor:
                 await self._handle_chunk(chunk)
         except TypeError as e:
             # Handle API response errors (e.g., 'NoneType' object is not iterable)
+            # This is commonly caused by upstream errors / rate limits where the
+            # LLM API returns choices=null.
             if "'NoneType' object is not iterable" in str(e):
-                error_msg = (
-                    "API returned an invalid response (choices is None). "
-                    "This usually indicates:\n"
-                    "1. API rate limiting or server error\n"
-                    "2. Invalid API key or authentication failure\n"
+                print(f"❌ Upstream error detected: {e}")
+                # CRITICAL: Must raise to be caught by the retry loop in agent_service.py.
+                # Do NOT send websocket error here, or the user will see a failure
+                # toast before the retry logic has a chance to run.
+                raise e
+            raise"
                     "3. Network timeout or connection issue\n"
                     "Please check your API configuration and try again."
                 )

@@ -570,10 +570,12 @@ async def langgraph_multi_agent(
                 )
                 if can_retry:
                     wait = 5 * (attempt + 1)
-                    print(f"⚠️ Transient error on attempt {attempt + 1}/{max_retries}, retrying in {wait}s: {e}")
+                    retry_num = attempt + 1
+                    max_possible_retries = max_retries - 1
+                    print(f"⚠️ Transient error on attempt {retry_num}/{max_retries}, retrying in {wait}s: {e}")
                     await send_to_websocket(session_id, {
                         'type': 'info',
-                        'info': f'模型繁忙，正在重试 ({attempt + 1}/{max_retries - 1})...'
+                        'info': f'模型繁忙，正在重试 ({retry_num}/{max_possible_retries})...'
                     })
                     await asyncio.sleep(wait)
                     continue
@@ -584,7 +586,7 @@ async def langgraph_multi_agent(
         await _handle_error(e, session_id)
 
 
-_TRANSIENT_PATTERNS = ('upstream_error', 'rate limit', 'rate_limit', 'model is busy', 'server is busy', 'overloaded', 'too many requests', 'service unavailable', 'try again')
+_TRANSIENT_PATTERNS = ('upstream_error', 'rate limit', 'rate_limit', 'model is busy', 'server is busy', 'overloaded', 'too many requests', 'service unavailable', 'try again', 'nonetype')
 
 def _is_transient_error(err_str: str) -> bool:
     lower = err_str.lower()
