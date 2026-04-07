@@ -63,16 +63,6 @@ class StreamProcessor:
                 # Do NOT send websocket error here, or the user will see a failure
                 # toast before the retry logic has a chance to run.
                 raise e
-            raise"
-                    "3. Network timeout or connection issue\n"
-                    "Please check your API configuration and try again."
-                )
-                print(f"❌ {error_msg}")
-                await self.websocket_service(self.session_id, {
-                    'type': 'error',
-                    'error': error_msg
-                })
-                return
             raise
 
     async def _handle_chunk(self, chunk: Any) -> None:
