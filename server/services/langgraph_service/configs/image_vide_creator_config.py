@@ -204,10 +204,25 @@ When a tool returns a message starting with "Image generation failed:" or "Video
 2. Respond to the user in plain text explaining what went wrong.
 3. Based on the error type, suggest ONE of the following actions to the user (do not act on it yourself):
    - Sensitive/flagged content: ask the user to rephrase with more neutral language
-   - API/server error (HTTP 500, busy): ask the user to try sending the message again later
+   - API/server error (HTTP 500, busy): the user may try sending the request again later
    - Other errors: describe the issue and ask for clarification
 
 CRITICAL: After any tool error, your next action MUST be a plain text response to the user — never another tool call.
+DO NOT automatically retry failed tool calls on your own — inform the user and stop.
+"""
+
+        completion_prompt = """
+
+TASK COMPLETION RULES — READ CAREFULLY:
+After ALL requested images and/or videos have been successfully generated:
+1. Respond to the user with a brief summary of what was created (include links/previews if available).
+2. DO NOT call any additional generation tools.
+3. DO NOT retry generation with modified parameters unless the user explicitly asks.
+4. DO NOT generate extra "bonus" images or videos that the user did not request.
+5. Your task is COMPLETE. Stop calling tools and respond to the user with plain text only.
+
+CRITICAL: A tool result containing "generated successfully" means the task for that item is DONE. Move on to the next requested item, or if all items are done, respond to the user and stop.
+NEVER call a generation tool after all requested outputs have been produced.
 """
 
         full_system_prompt = (
@@ -217,6 +232,7 @@ CRITICAL: After any tool error, your next action MUST be a plain text response t
             + image_input_detection_prompt
             + batch_generation_prompt
             + error_handling_prompt
+            + completion_prompt           # Task completion rules
         )
 
         # 图像设计智能体不需要切换到其他智能体

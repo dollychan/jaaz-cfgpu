@@ -144,10 +144,8 @@ async def generate_image_by_midjourney_jaaz(
     except Exception as e:
         error_message = f"Error in Midjourney image generation: {str(e)}"
         print(f"🎨 {error_message}")
-        # Return error as tool result so it appears in the tool call box.
-        # Do NOT send a WebSocket error event — that triggers the global toast
-        # and ends the session, preventing the LLM from responding to the user.
-        return error_message
+        # Raise so LangGraph ToolNode creates a status="error" ToolMessage.
+        raise
 
 
 # Export the tool for easy import

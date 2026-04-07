@@ -96,10 +96,11 @@ async def generate_image_with_provider(
     except Exception as e:
         error_message = str(e)
         print(f"🖼️ Error generating image with {provider}/{model}: {error_message}")
-        # Return error as tool result so it appears in the tool call box.
-        # Do NOT raise — that would bypass LangGraph's tool result handling
-        # and potentially trigger retries or a global error toast.
-        return f"Image generation failed: {error_message}"
+        # Raise the exception so LangGraph's ToolNode catches it internally and
+        # creates a ToolMessage with status="error". The LLM treats this as a
+        # genuine failure and stops retrying — unlike returning a string, which
+        # produces status="success" and causes the LLM to keep looping.
+        raise
 
     # Save image to canvas
     image_url = await save_image_to_canvas(

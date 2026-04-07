@@ -191,19 +191,14 @@ async def generate_video_with_provider(
         )
 
     except ContentPolicyError as e:
-        # Non-retriable content policy rejection — return as tool result string (not exception),
-        # so it appears in the tool call box and the LLM does not retry.
-        # Do NOT call send_video_error_notification here — that sends type:"error" WebSocket
-        # event which triggers the global toast and setPending(false), ending the session.
-        msg = str(e)
-        print(f"🎥 Content policy block for {model_name}: {msg}")
-        return msg
+        print(f"🎥 Content policy block for {model_name}: {e}")
+        # Raise so LangGraph ToolNode creates a status="error" ToolMessage.
+        # The LLM sees a genuine failure and stops retrying.
+        raise
 
     except Exception as e:
-        error_message = str(e)
-        print(f"🎥 Error generating video with {model_name}: {error_message}")
+        print(f"🎥 Error generating video with {model_name}: {e}")
         traceback.print_exc()
-        # Return error as tool result so it appears in the tool call box.
-        # Do NOT send a WebSocket error event — that triggers the global toast
-        # and ends the session, preventing the LLM from responding to the user.
-        return f"Video generation failed: {error_message}"
+        # Raise so LangGraph ToolNode creates a status="error" ToolMessage.
+        # The LLM sees a genuine failure and stops retrying.
+        raise

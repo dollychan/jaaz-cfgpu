@@ -27,17 +27,32 @@ When image generation fails, you MUST:
    - Avoid potentially controversial, violent, or inappropriate content
    - Try rephrasing with more neutral language
 3. If it's an API error (HTTP 500, etc.), suggest:
-   - Trying again in a moment
+   - The user may retry the request manually later
    - Using different wording in the prompt
    - Checking if the service is temporarily unavailable
 4. Always provide helpful suggestions for alternative approaches
 5. Maintain a supportive and professional tone
 
 IMPORTANT: Never ignore tool errors. Always respond to failed tool calls with helpful guidance for the user.
+DO NOT automatically retry failed tool calls on your own — inform the user and stop.
+"""
+
+        completion_prompt = """
+
+TASK COMPLETION RULES — READ CAREFULLY:
+After ALL requested images have been successfully generated:
+1. Respond to the user with a brief summary of what was created.
+2. DO NOT call any additional generation tools.
+3. DO NOT retry generation with modified parameters unless the user explicitly asks.
+4. DO NOT generate extra "bonus" images that the user did not request.
+5. Your task is COMPLETE. Stop calling tools and respond to the user with plain text only.
+
+CRITICAL: A tool result containing "generated successfully" means the task for that item is DONE. Move on to the next requested item, or if all items are done, respond to the user and stop.
+NEVER call a generation tool after all requested outputs have been produced.
 """
 
         full_system_prompt = system_prompt + \
-            batch_generation_prompt + error_handling_prompt
+            batch_generation_prompt + error_handling_prompt + completion_prompt
 
         # 图像设计智能体不需要切换到其他智能体
         handoffs: List[HandoffConfig] = [

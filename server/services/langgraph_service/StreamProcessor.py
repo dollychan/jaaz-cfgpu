@@ -48,7 +48,7 @@ class StreamProcessor:
         try:
             async for chunk in compiled_swarm.astream(
                 {"messages": messages},
-                config=context,
+                config={**context, "recursion_limit": 15},
                 stream_mode=["messages", "custom", 'values']
             ):
                 self.chunks_received += 1
