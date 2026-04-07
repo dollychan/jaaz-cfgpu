@@ -33,6 +33,10 @@ def _fix_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
     根据LangGraph文档建议，移除没有对应ToolMessage的tool_calls
     参考: https://langchain-ai.github.io/langgraph/troubleshooting/errors/INVALID_CHAT_HISTORY/
+
+    额外修复：当 assistant 消息同时有 content 和 tool_calls，且所有 tool_calls
+    都已完整执行时，移除 tool_calls。这是因为 content 的存在表明 LLM 认为任务
+    已完成并准备回复用户，保留 tool_calls 会让后续执行误以为还有未完成的工作。
     """
     if not messages:
         return messages
@@ -60,15 +64,26 @@ def _fix_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 elif tool_call_id:
                     removed_calls.append(tool_call_id)
 
+            has_content = bool(msg.get('content'))
+
             if removed_calls:
                 print(
                     f"🔧 修复消息历史：移除了 {len(removed_calls)} 个不完整的工具调用: {removed_calls}")
 
-            if valid_tool_calls:
+            # 修复：如果消息有 content（LLM 准备回复用户），即使 tool_calls 完整也移除它们。
+            # 这表明 LLM 认为任务已完成，保留 tool_calls 会让后续执行误以为还需继续调用工具。
+            if has_content and valid_tool_calls:
+                print(
+                    f"🔧 修复消息历史：移除已完成 tool_calls（共 {len(valid_tool_calls)} 个），"
+                    f"保留 content 回复。这防止 LLM 将已完成的任务误认为需要继续执行。")
+                msg_copy = msg.copy()
+                msg_copy.pop('tool_calls', None)
+                fixed_messages.append(msg_copy)
+            elif valid_tool_calls:
                 msg_copy = msg.copy()
                 msg_copy['tool_calls'] = valid_tool_calls
                 fixed_messages.append(msg_copy)
-            elif msg.get('content'):
+            elif has_content:
                 msg_copy = msg.copy()
                 msg_copy.pop('tool_calls', None)
                 fixed_messages.append(msg_copy)
