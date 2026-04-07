@@ -11,7 +11,7 @@ from models.config_model import ModelInfo
 from ..video_providers.video_base_provider import get_default_provider, VideoProviderBase
 # Import all providers to ensure automatic registration (don't delete these imports)
 from ..video_providers.volces_provider import VolcesVideoProvider  # type: ignore
-from ..video_providers.cfgpu_provider import CfgpuVideoProvider  # type: ignore
+from ..video_providers.cfgpu_provider import CfgpuVideoProvider, ContentPolicyError  # type: ignore
 from .video_canvas_utils import (
     send_video_start_notification,
     send_video_error_notification,
@@ -190,6 +190,15 @@ async def generate_video_with_provider(
             canvas_id=canvas_id,
             provider_name=f"{model_name} ({provider_name})"
         )
+
+    except ContentPolicyError as e:
+        # Non-retriable content policy rejection — return as tool result string (not exception),
+        # so it appears in the tool call box and the LLM does not retry.
+        # Do NOT call send_video_error_notification here — that sends type:"error" WebSocket
+        # event which triggers the global toast and setPending(false), ending the session.
+        msg = str(e)
+        print(f"🎥 Content policy block for {model_name}: {msg}")
+        return msg
 
     except Exception as e:
         error_message = str(e)

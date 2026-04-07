@@ -7,6 +7,11 @@ from utils.http_client import HttpClient
 from services.config_service import config_service
 
 
+class ContentPolicyError(Exception):
+    """Raised when CFGPU rejects a request due to content policy. Should not be retried."""
+    pass
+
+
 class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
     """CFGPU video generation provider implementation"""
 
@@ -209,6 +214,16 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
                             or f"Task {status} with no details"
                         )
                         print(f"🎥 CFGPU task failed, full response: {poll_res}")
+                        # Content policy errors are non-retriable — raise a distinct type
+                        # so the caller can return a user-facing message instead of retrying.
+                        NON_RETRIABLE_PREFIXES = (
+                            "OutputVideoSensitiveContentDetected",
+                            "InputSensitiveContentDetected",
+                            "InputImageSensitiveContentDetected",
+                            "ContentPolicyViolation",
+                        )
+                        if error_code and any(error_code.startswith(p) for p in NON_RETRIABLE_PREFIXES):
+                            raise ContentPolicyError(f"CFGPU video generation blocked by content policy ({error_code}): please change the prompt or input media and try again.")
                         raise Exception(f"CFGPU video generation failed: {detail}")
 
         raise Exception(f"Task polling finished with unexpected status: {status}")
@@ -290,6 +305,9 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
                 print(f"🎥 CFGPU video generation completed, video URL: {video_url}")
                 return video_url
 
+            except ContentPolicyError:
+                # Non-retriable: surface directly to the tool caller
+                raise
             except Exception as e:
                 last_exc = e
                 err_str = str(e)

@@ -12,7 +12,6 @@ from typing import Dict, List, Any, Tuple, Optional, Union
 from services.config_service import FILES_DIR
 from services.db_service import db_service
 from services.websocket_service import send_to_websocket, broadcast_session_update  # type: ignore
-from common import DEFAULT_PORT
 from utils.http_client import HttpClient
 import aiofiles
 import mimetypes
@@ -153,7 +152,11 @@ async def send_video_error_notification(session_id: str, error_message: str) -> 
 
 def format_video_success_message(filename: str) -> str:
     """Format success message for video generation"""
-    return f"video generated successfully ![video_id: {filename}](/api/file/{filename})"
+    server_base = os.environ.get(
+        "JAAZ_SERVER_URL",
+        f"http://127.0.0.1:{os.environ.get('DEFAULT_PORT', '57988')}"
+    ).rstrip("/")
+    return f"video generated successfully ![video_id: {filename}]({server_base}/api/file/{filename})"
 
 
 async def process_video_result(
