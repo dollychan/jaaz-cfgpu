@@ -2,6 +2,7 @@ from models.tool_model import ToolInfoJson
 from services.db_service import db_service
 from .StreamProcessor import StreamProcessor
 from .configs import PlannerAgentConfig, create_handoff_tool
+import asyncio
 import traceback
 import json
 import os
@@ -539,12 +540,48 @@ async def langgraph_multi_agent(
         model_messages, token_count = _truncate_messages_by_context_window(model_messages)
         _log_payload_size(model_messages, token_count)
 
-        processor = StreamProcessor(
-            session_id, db_service, send_to_websocket)  # type: ignore
-        await processor.process_stream(swarm, model_messages, context)
+        max_retries = 3
+        for attempt in range(max_retries):
+            processor = StreamProcessor(
+                session_id, db_service, send_to_websocket)  # type: ignore
+            try:
+                await processor.process_stream(swarm, model_messages, context)
+                break  # success
+            except Exception as e:
+                can_retry = (
+                    _is_transient_error(str(e))
+                    and processor._new_responses_saved == 0
+                    and attempt < max_retries - 1
+                )
+                if can_retry:
+                    wait = 5 * (attempt + 1)
+                    print(f"⚠️ Transient error on attempt {attempt + 1}/{max_retries}, retrying in {wait}s: {e}")
+                    if processor.chunks_received > 0:
+                        # Partial deltas were sent to frontend but nothing committed to DB.
+                        # Reset frontend to the pre-call message state before retrying.
+                        from langchain_core.messages import convert_to_openai_messages as _conv
+                        await send_to_websocket(session_id, {
+                            'type': 'all_messages',
+                            'messages': model_messages
+                        })
+                    await send_to_websocket(session_id, {
+                        'type': 'info',
+                        'info': f'模型繁忙，正在重试 ({attempt + 1}/{max_retries - 1})...'
+                    })
+                    await asyncio.sleep(wait)
+                    continue
+                await _handle_error(e, session_id)
+                break
 
     except Exception as e:
         await _handle_error(e, session_id)
+
+
+_TRANSIENT_PATTERNS = ('upstream_error', 'rate limit', 'rate_limit', 'model is busy', 'server is busy', 'overloaded', 'too many requests', 'service unavailable', 'try again')
+
+def _is_transient_error(err_str: str) -> bool:
+    lower = err_str.lower()
+    return any(p in lower for p in _TRANSIENT_PATTERNS)
 
 
 async def _handle_error(error: Exception, session_id: str) -> None:
@@ -554,7 +591,14 @@ async def _handle_error(error: Exception, session_id: str) -> None:
     print(f"Full traceback:\n{tb_str}")
     traceback.print_exc()
 
+    err_str = str(error)
+    # Transient model-busy errors — show a friendly retry prompt instead of raw internals
+    if 'upstream_error' in err_str or 'busy' in err_str.lower() or 'rate limit' in err_str.lower():
+        user_message = '模型当前繁忙，请稍后重试。'
+    else:
+        user_message = err_str
+
     await send_to_websocket(session_id, cast(Dict[str, Any], {
         'type': 'error',
-        'error': str(error)
+        'error': user_message
     }))

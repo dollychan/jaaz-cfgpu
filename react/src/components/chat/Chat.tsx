@@ -80,7 +80,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     }
   }, [sessionList, searchSessionId])
 
-  type MessageWithUid = Message & { __uid?: string }
+  type MessageWithUid = Message & { __uid?: string; __isError?: boolean }
   const [messages, setMessages] = useState<MessageWithUid[]>([])
   const [pending, setPending] = useState<PendingType>(
     initCanvas ? 'text' : false
@@ -512,11 +512,16 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     (data: TEvents['Socket::Session::Error']) => {
       if (data.session_id && data.session_id !== sessionId) return
       setPending(false)
-      toast.error('Error: ' + (data.error ?? 'Unknown error'), {
-        closeButton: true,
-        duration: 3600 * 1000,
-        style: { color: 'red' },
-      })
+      // Display the error as a message in the session instead of a global toast,
+      // so the user sees it in context and can retry inline.
+      setMessages((prev) => [
+        ...prev,
+        ensureMessageUid({
+          role: 'assistant',
+          content: data.error ?? 'Unknown error',
+          __isError: true,
+        } as MessageWithUid),
+      ])
     },
     [sessionId]
   )
@@ -734,8 +739,15 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
               {/* Messages */}
               {messages.map((message, idx) => (
                 <div key={message.__uid ?? `message-${idx}`} className='flex flex-col gap-4 mb-2'>
+                  {/* Error message — displayed in-session instead of global toast */}
+                  {(message as MessageWithUid).__isError && typeof message.content === 'string' && (
+                    <div className='flex items-start gap-2 text-destructive text-sm py-2'>
+                      <span className='shrink-0 mt-0.5'>⚠️</span>
+                      <span>{message.content}</span>
+                    </div>
+                  )}
                   {/* Regular message content */}
-                  {typeof message.content == 'string' &&
+                  {!(message as MessageWithUid).__isError && typeof message.content == 'string' &&
                     (message.role !== 'tool' ? (
                       <MessageRegular
                         message={message}

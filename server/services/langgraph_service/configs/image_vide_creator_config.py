@@ -57,6 +57,30 @@ class ImageVideoCreatorAgentConfig(BaseAgentConfig):
             "4. If input_images count > 1 , prefer an image tool that explicitly supports multiple input images"
         )
 
+        # Explicitly list image/video tools so the LLM doesn't hallucinate tool names.
+        # Some LLM providers don't strictly enforce bind_tools schema, so the model
+        # may invent plausible-sounding names (e.g. generate_image_by_doubao_seedream_4_5_cfgpu)
+        # based on the naming pattern it has seen in training data.
+        image_tools = [t for t in tool_list if t.get('type') == 'image']
+        video_tools = [t for t in tool_list if t.get('type') == 'video']
+
+        def _safe_tool_id(t: ToolInfoJson) -> str:
+            return (t.get('id') or '').replace('/', '_').replace('-', '_').replace('.', '_').replace(':', '_').replace(' ', '_')
+
+        available_tools_prompt = ""
+        if image_tools or video_tools:
+            lines = []
+            for t in image_tools:
+                lines.append(f"  - {_safe_tool_id(t)} [image] ({t.get('display_name') or t.get('id', '')})")
+            for t in video_tools:
+                lines.append(f"  - {_safe_tool_id(t)} [video] ({t.get('display_name') or t.get('id', '')})")
+            available_tools_prompt = f"""
+AVAILABLE IMAGE/VIDEO TOOLS (use ONLY these exact tool names, do not invent others):
+{chr(10).join(lines)}
+
+CRITICAL: NEVER call a tool name that is not in the list above. If the required tool is not listed, tell the user it is not available.
+"""
+
         # Issue 4.1: describe available text tools so LLM knows when to call them
         text_tools = [t for t in tool_list if t.get('type') == 'text']
         if text_tools:
@@ -193,7 +217,8 @@ IMPORTANT: Never ignore tool errors. Always respond to failed tool calls with he
 
         full_system_prompt = (
             system_prompt
-            + text_tools_prompt          # Issue 4.1: text tools section (empty string if none)
+            + available_tools_prompt      # explicit image/video tool list to prevent hallucination
+            + text_tools_prompt           # Issue 4.1: text tools section (empty string if none)
             + image_input_detection_prompt
             + batch_generation_prompt
             + error_handling_prompt

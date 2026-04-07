@@ -21,6 +21,11 @@ class StreamProcessor:
         # new agent responses start at oai_messages[K], not at the DB count index M+1.
         self._langgraph_initial_count: int = 0
         self._new_responses_saved: int = 0
+        # Number of stream chunks received before any exception.
+        # Used by the retry logic in agent_service to decide if it is safe to
+        # retry: chunks_received == 0 means the LLM failed before sending any
+        # tokens, so the frontend state is unchanged and retry is safe.
+        self.chunks_received: int = 0
 
     async def process_stream(self, swarm: StateGraph, messages: List[Dict[str, Any]], context: Dict[str, Any]) -> None:
         """处理整个流式响应
@@ -46,6 +51,7 @@ class StreamProcessor:
                 config=context,
                 stream_mode=["messages", "custom", 'values']
             ):
+                self.chunks_received += 1
                 await self._handle_chunk(chunk)
         except TypeError as e:
             # Handle API response errors (e.g., 'NoneType' object is not iterable)
