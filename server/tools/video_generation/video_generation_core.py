@@ -14,7 +14,6 @@ from ..video_providers.volces_provider import VolcesVideoProvider  # type: ignor
 from ..video_providers.cfgpu_provider import CfgpuVideoProvider, ContentPolicyError  # type: ignore
 from .video_canvas_utils import (
     send_video_start_notification,
-    send_video_error_notification,
     process_video_result,
 )
 from services.config_service import FILES_DIR
@@ -204,10 +203,7 @@ async def generate_video_with_provider(
         error_message = str(e)
         print(f"🎥 Error generating video with {model_name}: {error_message}")
         traceback.print_exc()
-
-        # Send error notification
-        await send_video_error_notification(session_id, error_message)
-
-        # Re-raise the exception for proper error handling
-        raise Exception(
-            f"{model_name} video generation failed: {error_message}")
+        # Return error as tool result so it appears in the tool call box.
+        # Do NOT send a WebSocket error event — that triggers the global toast
+        # and ends the session, preventing the LLM from responding to the user.
+        return f"Video generation failed: {error_message}"

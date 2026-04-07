@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from langchain_core.tools import tool, InjectedToolCallId  # type: ignore
 from langchain_core.runnables import RunnableConfig
 from services.jaaz_service import JaazService
-from tools.utils.image_canvas_utils import save_image_to_canvas, send_image_start_notification, send_image_error_notification
+from tools.utils.image_canvas_utils import save_image_to_canvas, send_image_start_notification
 import os
 from tools.utils.image_utils import get_image_info_and_save, generate_image_id, process_input_image
 from services.config_service import FILES_DIR
@@ -144,11 +144,10 @@ async def generate_image_by_midjourney_jaaz(
     except Exception as e:
         error_message = f"Error in Midjourney image generation: {str(e)}"
         print(f"🎨 {error_message}")
-
-        # Send error notification
-        await send_image_error_notification(session_id, error_message)
-
-        raise e
+        # Return error as tool result so it appears in the tool call box.
+        # Do NOT send a WebSocket error event — that triggers the global toast
+        # and ends the session, preventing the LLM from responding to the user.
+        return error_message
 
 
 # Export the tool for easy import
