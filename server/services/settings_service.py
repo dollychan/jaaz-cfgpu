@@ -107,9 +107,14 @@ class SettingsService:
                 # 如果设置文件不存在，创建默认设置文件
                 self.create_default_settings()
 
-            # 读取 JSON 配置文件
+            # 读取 JSON 配置文件（文件为空时视为默认设置）
             with open(self.settings_file, 'r', encoding='utf-8') as f:
-                settings = json.load(f)
+                raw = f.read().strip()
+            if not raw:
+                print(f"⚠️ settings.json is empty, recreating with defaults")
+                self.create_default_settings()
+                return {**DEFAULT_SETTINGS}
+            settings = json.loads(raw)
 
             # 与默认设置合并，确保所有键都存在
             merged_settings = {**DEFAULT_SETTINGS}
@@ -150,9 +155,14 @@ class SettingsService:
                 # 如果设置文件不存在，创建默认设置
                 self.create_default_settings()
 
-            # 读取 JSON 配置文件
+            # 读取 JSON 配置文件（文件为空时视为默认设置）
             with open(self.settings_file, 'r', encoding='utf-8') as f:
-                settings = json.load(f)
+                raw = f.read().strip()
+            if not raw:
+                print(f"⚠️ settings.json is empty, recreating with defaults")
+                self.create_default_settings()
+                return {**DEFAULT_SETTINGS}
+            settings = json.loads(raw)
 
             # 与默认设置合并
             merged_settings = {**DEFAULT_SETTINGS}

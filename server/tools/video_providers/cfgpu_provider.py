@@ -223,7 +223,11 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
                             "ContentPolicyViolation",
                         )
                         if error_code and any(error_code.startswith(p) for p in NON_RETRIABLE_PREFIXES):
-                            raise ContentPolicyError(f"CFGPU video generation blocked by content policy ({error_code}): please change the prompt or input media and try again.")
+                            raise ContentPolicyError(
+                                f"Content policy violation ({error_code}): the prompt or input media was rejected. "
+                                f"STOP. Do NOT retry with any other tool. "
+                                f"Tell the user their content was rejected and ask them to change the prompt or input media."
+                            )
                         raise Exception(f"CFGPU video generation failed: {detail}")
 
         raise Exception(f"Task polling finished with unexpected status: {status}")

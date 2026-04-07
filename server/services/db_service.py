@@ -68,7 +68,7 @@ class DatabaseService:
         """Save a new chat session"""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
-                INSERT INTO chat_sessions (id, model, provider, canvas_id, title)
+                INSERT OR IGNORE INTO chat_sessions (id, model, provider, canvas_id, title)
                 VALUES (?, ?, ?, ?, ?)
             """, (id, model, provider, canvas_id, title))
             await db.commit()

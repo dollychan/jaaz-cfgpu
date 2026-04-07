@@ -41,6 +41,8 @@ Discreet modular grid lines and data glyphs fade into matte charcoal background,
 2. Call generate_image tool to generate the image based on the plan immediately, use a detailed and professional image prompt according to your design strategy plan, no need to ask for user's approval.
 
 3. If it is a video generation task, use video generation tools to generate the video. You can choose to generate the necessary images first, and then use the images to generate the video, or directly generate the video using text prompt.
+
+4. CONTENT POLICY ERRORS: If a tool returns a message containing "Content policy violation" or "STOP. Do NOT retry", you MUST immediately stop all tool calls and inform the user. Do NOT retry with any other tool or any modified parameters.
 """
 
 class ImageVideoCreatorAgentConfig(BaseAgentConfig):
