@@ -137,7 +137,7 @@ class DatabaseService:
             await db.commit()
 
     async def get_canvas_data(self, id: str) -> Optional[Dict[str, Any]]:
-        """Get canvas data"""
+        """Get canvas data, auto-creating the record if it doesn't exist."""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = sqlite3.Row
             cursor = await db.execute("""
@@ -147,15 +147,27 @@ class DatabaseService:
             """, (id,))
             row = await cursor.fetchone()
 
-            sessions = await self.list_sessions(id)
-            
-            if row:
+            if not row:
+                # Auto-create canvas so sessions can be persisted against it
+                default_name = 'Default Canvas' if id == 'default' else id
+                await db.execute(
+                    "INSERT OR IGNORE INTO canvases (id, name, data) VALUES (?, ?, ?)",
+                    (id, default_name, '{}')
+                )
+                await db.commit()
+                sessions = []
                 return {
-                    'data': json.loads(row['data']) if row['data'] else {},
-                    'name': row['name'],
+                    'data': {},
+                    'name': default_name,
                     'sessions': sessions
                 }
-            return None
+
+            sessions = await self.list_sessions(id)
+            return {
+                'data': json.loads(row['data']) if row['data'] else {},
+                'name': row['name'],
+                'sessions': sessions
+            }
 
     async def delete_session(self, session_id: str):
         """Delete a chat session and all its messages"""

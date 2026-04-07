@@ -128,6 +128,9 @@ async def _create_asset(public_url: str, asset_type: str) -> dict:
         result = response.json()
 
     # Response shape: { "Result": { "Id": "asset-..." }, "ResponseMetadata": {...} }
+    api_error = result.get("ResponseMetadata", {}).get("Error", {})
+    if api_error and api_error.get("Code"):
+        raise ValueError(f"CFGPU CreateAsset error [{api_error['Code']}]: {api_error.get('Message', '')}")
     return result.get("Result") or {}
 
 
