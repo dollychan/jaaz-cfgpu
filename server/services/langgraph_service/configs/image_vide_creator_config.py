@@ -42,7 +42,7 @@ Discreet modular grid lines and data glyphs fade into matte charcoal background,
 
 3. If it is a video generation task, use video generation tools to generate the video. You can choose to generate the necessary images first, and then use the images to generate the video, or directly generate the video using text prompt.
 
-4. CONTENT POLICY ERRORS: If a tool returns a message containing "Content policy violation" or "STOP. Do NOT retry", you MUST immediately stop all tool calls and inform the user. Do NOT retry with any other tool or any modified parameters.
+4. CONTENT POLICY ERRORS: If a tool returns a message containing "Content policy violation" or "STOP. Do NOT retry", you MUST immediately stop all tool calls and inform the user in plain text. Do NOT retry with any other tool or any modified parameters. Your next action MUST be a plain text reply — never a tool call.
 """
 
 class ImageVideoCreatorAgentConfig(BaseAgentConfig):
@@ -199,20 +199,15 @@ BATCH GENERATION RULES:
         error_handling_prompt = """
 
 ERROR HANDLING INSTRUCTIONS:
-When image generation fails, you MUST:
-1. Acknowledge the failure and explain the specific reason to the user
-2. If the error mentions "sensitive content" or "flagged content", advise the user to:
-   - Use more appropriate and less sensitive descriptions
-   - Avoid potentially controversial, violent, or inappropriate content
-   - Try rephrasing with more neutral language
-3. If it's an API error (HTTP 500, etc.), suggest:
-   - Trying again in a moment
-   - Using different wording in the prompt
-   - Checking if the service is temporarily unavailable
-4. Always provide helpful suggestions for alternative approaches
-5. Maintain a supportive and professional tone
+When a tool returns a message starting with "Image generation failed:" or "Video generation failed:", you MUST:
+1. IMMEDIATELY STOP calling any tools. Do NOT retry the same tool or try a different tool.
+2. Respond to the user in plain text explaining what went wrong.
+3. Based on the error type, suggest ONE of the following actions to the user (do not act on it yourself):
+   - Sensitive/flagged content: ask the user to rephrase with more neutral language
+   - API/server error (HTTP 500, busy): ask the user to try sending the message again later
+   - Other errors: describe the issue and ask for clarification
 
-IMPORTANT: Never ignore tool errors. Always respond to failed tool calls with helpful guidance for the user.
+CRITICAL: After any tool error, your next action MUST be a plain text response to the user — never another tool call.
 """
 
         full_system_prompt = (

@@ -550,20 +550,12 @@ async def langgraph_multi_agent(
             except Exception as e:
                 can_retry = (
                     _is_transient_error(str(e))
-                    and processor._new_responses_saved == 0
+                    and processor.chunks_received == 0
                     and attempt < max_retries - 1
                 )
                 if can_retry:
                     wait = 5 * (attempt + 1)
                     print(f"⚠️ Transient error on attempt {attempt + 1}/{max_retries}, retrying in {wait}s: {e}")
-                    if processor.chunks_received > 0:
-                        # Partial deltas were sent to frontend but nothing committed to DB.
-                        # Reset frontend to the pre-call message state before retrying.
-                        from langchain_core.messages import convert_to_openai_messages as _conv
-                        await send_to_websocket(session_id, {
-                            'type': 'all_messages',
-                            'messages': model_messages
-                        })
                     await send_to_websocket(session_id, {
                         'type': 'info',
                         'info': f'模型繁忙，正在重试 ({attempt + 1}/{max_retries - 1})...'
