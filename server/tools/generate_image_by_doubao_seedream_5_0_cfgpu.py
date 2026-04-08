@@ -11,8 +11,8 @@ class GenerateImageByDoubaoSeedream5_0CfgpuInputSchema(BaseModel):
         description="Required. The prompt for image generation. Describe what you want to see in the image."
     )
     size: str = Field(
-        default="2K",
-        description="Optional. Output image size. Allowed values: 1K, 2K, 4K. Default is 2K."
+        default="2k",
+        description="Optional. Output image size. Allowed values: 2k, 3k. Default is 2k."
     )
     input_images: OptionalStringList = Field(
         default=None,
@@ -30,7 +30,7 @@ async def generate_image_by_doubao_seedream_5_0_cfgpu(
     prompt: str,
     config: RunnableConfig,
     tool_call_id: Annotated[str, InjectedToolCallId],
-    size: str = "2K",
+    size: str = "2k",
     input_images: Optional[list[str]] = None,
 ) -> str:
     ctx = config.get('configurable', {})

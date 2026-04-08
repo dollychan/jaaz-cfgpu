@@ -27,7 +27,7 @@ class CfgpuImageProvider(ImageProviderBase):
         aspect_ratio: str = "1:1",
         input_images: Optional[list[str]] = None,
         metadata: Optional[dict[str, Any]] = None,
-        size: str = "2K",
+        size: str = "2k",
         **kwargs: Any,
     ) -> Tuple[str, int, int, str]:
         """
@@ -40,7 +40,7 @@ class CfgpuImageProvider(ImageProviderBase):
             input_images: Optional reference images as base64 data URLs (data:image/<fmt>;base64,...).
                           Supported by doubao-seedream-4.0/4.5/5.0-lite; up to 14 images.
                           NOT supported by doubao-seedream-3.0-t2i.
-            size: Output size preset (e.g. "1K", "2K", "4K"). Default "2K"
+            size: Output size preset. API accepts '2k', '3k', or 'WIDTHxHEIGHT'. Default "2k"
 
         Returns:
             Tuple[str, int, int, str]: (mime_type, width, height, filename)
@@ -52,12 +52,14 @@ class CfgpuImageProvider(ImageProviderBase):
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {api_key}",
             }
+            # API requires lowercase size: '2k', '3k', or 'WIDTHxHEIGHT'
+            normalized_size = size.lower() if size else "2k"
             payload: dict[str, Any] = {
                 "model": model,
                 "prompt": prompt,
                 "sequential_image_generation": "disabled",
                 "response_format": "url",
-                "size": size,
+                "size": normalized_size,
                 "stream": False,
                 "watermark": False,
             }
@@ -68,7 +70,7 @@ class CfgpuImageProvider(ImageProviderBase):
                 clamped = input_images[:14]
                 payload["image"] = clamped[0] if len(clamped) == 1 else clamped
 
-            print(f"🖼️ CFGPU image generation: model={model}, size={size}, images={len(input_images) if input_images else 0}")
+            print(f"🖼️ CFGPU image generation: model={model}, size={normalized_size}, images={len(input_images) if input_images else 0}")
 
             async with HttpClient.create_aiohttp() as session:
                 async with session.post(url, headers=headers, json=payload) as response:
