@@ -11,8 +11,9 @@ from langgraph_swarm import create_swarm  # type: ignore
 from langgraph.prebuilt import create_react_agent  # type: ignore
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, BaseMessage
 from langchain_core.tools import tool as lc_tool  # type: ignore
+from langchain_core.callbacks import BaseCallbackHandler
 from services.websocket_service import send_to_websocket  # type: ignore
 from services.config_service import config_service
 from services.settings_service import settings_service
@@ -28,15 +29,186 @@ class ContextInfo(TypedDict):
     model_info: Dict[str, List[ModelInfo]]
 
 
+class PromptLoggingCallbackHandler(BaseCallbackHandler):
+    """Callback handler that logs the full prompt sent to the LLM on EVERY invocation.
+    
+    This captures:
+    - The initial prompt (system + messages)
+    - Every re-invocation after tool calls (system + messages + tool results)
+    """
+    
+    def __init__(self):
+        self.call_count = 0
+    
+    def _log_messages(self, messages: List[Any], prefix: str = "") -> None:
+        """格式化打印消息列表"""
+        for i, msg in enumerate(messages):
+            role = getattr(msg, 'type', getattr(msg, '__class__.__name__', 'unknown'))
+            name = getattr(msg, 'name', '')
+            content = getattr(msg, 'content', '')
+            tool_calls = getattr(msg, 'tool_calls', None)
+            tool_call_id = getattr(msg, 'tool_call_id', None)
+            
+            header = f"[{i}] role={role}"
+            if name:
+                header += f", name={name}"
+            if tool_call_id:
+                header += f", tool_call_id={tool_call_id}"
+            if tool_calls:
+                tc_names = [tc.get('name', '?') for tc in tool_calls] if isinstance(tool_calls, list) else []
+                header += f", tool_calls=[{', '.join(tc_names)}]"
+            
+            print(f"\n  {header}")
+            
+            # 打印内容
+            if isinstance(content, str):
+                preview = content if len(content) <= 2000 else content[:2000] + f"... [截断, 总{len(content)}字符]"
+                print(f"    content: {preview}")
+            elif isinstance(content, list):
+                for j, item in enumerate(content):
+                    if isinstance(item, dict):
+                        if item.get('type') == 'text':
+                            text = item.get('text', '')
+                            preview = text if len(text) <= 1000 else text[:1000] + f"... [截断, 总{len(text)}字符]"
+                            print(f"    content[{j}] (text): {preview}")
+                        elif item.get('type') == 'image_url':
+                            url = item.get('image_url', {}).get('url', '')[:120]
+                            print(f"    content[{j}] (image_url): {url}")
+                        else:
+                            print(f"    content[{j}] ({item.get('type')}): {str(item)[:200]}")
+                    elif hasattr(item, 'content'):
+                        text = item.content if isinstance(item.content, str) else str(item.content)
+                        preview = text if len(text) <= 1000 else text[:1000] + f"... [截断]"
+                        print(f"    content[{j}] ({getattr(item, 'type', 'unknown')}): {preview}")
+                    else:
+                        print(f"    content[{j}]: {str(item)[:200]}")
+            
+            # 打印 tool_calls
+            if tool_calls and isinstance(tool_calls, list):
+                for tc in tool_calls:
+                    if isinstance(tc, dict):
+                        tc_name = tc.get('name', '?')
+                        tc_args = tc.get('args', {})
+                        tc_id = tc.get('id', '?')
+                    else:
+                        tc_name = getattr(tc, 'name', '?')
+                        tc_args = getattr(tc, 'args', {})
+                        tc_id = getattr(tc, 'id', '?')
+                    tc_args_str = json.dumps(tc_args, ensure_ascii=False) if tc_args else '{}'
+                    if len(tc_args_str) > 1000:
+                        tc_args_str = tc_args_str[:1000] + '... [截断]'
+                    print(f"    tool_call: {tc_id} -> {tc_name}({tc_args_str})")
+
+    def on_chat_model_start(self, serialized: Dict[str, Any], messages: List[Any], **kwargs: Any) -> None:
+        """Called when the chat model starts. Logs the full prompt on EVERY invocation."""
+        self.call_count += 1
+        print(f"\n{'='*100}")
+        print(f"📝 [LLM CALLBACK LOG] Call #{self.call_count}")
+        print(f"{'='*100}")
+        
+        # messages 通常是 List[List[BaseMessage]] 格式
+        for msg_group_idx, msg_group in enumerate(messages):
+            if isinstance(msg_group, list):
+                print(f"\n{'─'*60}")
+                print(f"  MESSAGE GROUP {msg_group_idx} ({len(msg_group)} 条消息):")
+                print(f"{'─'*60}")
+                self._log_messages(msg_group)
+        
+        print(f"\n{'='*100}\n")
+
+    run_on_chat_model_start = on_chat_model_start
+
+    async def on_chat_model_start_async(self, serialized: Dict[str, Any], messages: List[Any], **kwargs: Any) -> None:
+        """Async version of on_chat_model_start."""
+        self.on_chat_model_start(serialized, messages, **kwargs)
+
+
+def _log_llm_prompt(messages: List[Dict[str, Any]], system_prompt: str, agent_name: str = "assistant") -> None:
+    """打印发给 LLM 的完整初始 prompt（包含 system prompt + 消息历史），用于分析。
+    
+    Args:
+        messages: 消息历史（已修复/截断/展开的图片URL）
+        system_prompt: 系统提示词
+        agent_name: 当前 agent 名称
+    """
+    print(f"\n{'='*100}")
+    print(f"📝 [LLM PROMPT LOG] Agent: {agent_name}")
+    print(f"{'='*100}")
+    
+    # 打印 System Prompt
+    print(f"\n{'─'*60}")
+    print(f"  SYSTEM PROMPT (前 3000 字符):")
+    print(f"{'─'*60}")
+    if system_prompt:
+        if len(system_prompt) > 3000:
+            print(system_prompt[:3000])
+            print(f"\n... [已截断，总长度 {len(system_prompt)} 字符]")
+        else:
+            print(system_prompt)
+    else:
+        print("  (无 system prompt)")
+    
+    # 打印消息历史
+    print(f"\n{'─'*60}")
+    print(f"  MESSAGE HISTORY ({len(messages)} 条消息):")
+    print(f"{'─'*60}")
+    
+    for i, msg in enumerate(messages):
+        role = msg.get('role', 'unknown')
+        name = msg.get('name', '')
+        content = msg.get('content', '')
+        tool_calls = msg.get('tool_calls')
+        tool_call_id = msg.get('tool_call_id')
+        
+        header = f"[{i}] role={role}"
+        if name:
+            header += f", name={name}"
+        if tool_call_id:
+            header += f", tool_call_id={tool_call_id}"
+        if tool_calls:
+            header += f", tool_calls=[{', '.join(tc.get('name', '?') for tc in tool_calls)}]"
+        
+        print(f"\n  {header}")
+        
+        # 打印内容
+        if isinstance(content, str):
+            preview = content if len(content) <= 2000 else content[:2000] + f"... [截断, 总{len(content)}字符]"
+            print(f"    content: {preview}")
+        elif isinstance(content, list):
+            for j, item in enumerate(content):
+                if item.get('type') == 'text':
+                    text = item.get('text', '')
+                    preview = text if len(text) <= 1000 else text[:1000] + f"... [截断, 总{len(text)}字符]"
+                    print(f"    content[{j}] (text): {preview}")
+                elif item.get('type') == 'image_url':
+                    url = item.get('image_url', {}).get('url', '')[:120]
+                    print(f"    content[{j}] (image_url): {url}")
+                else:
+                    print(f"    content[{j}] ({item.get('type')}): {str(item)[:200]}")
+        
+        # 打印 tool_calls
+        if tool_calls:
+            for tc in tool_calls:
+                tc_name = tc.get('name', '?')
+                tc_args = tc.get('args', {})
+                tc_args_str = json.dumps(tc_args, ensure_ascii=False)
+                if len(tc_args_str) > 1000:
+                    tc_args_str = tc_args_str[:1000] + '... [截断]'
+                print(f"    tool_call: {tc.get('id')} -> {tc_name}({tc_args_str})")
+    
+    print(f"\n{'='*100}\n")
+
+
 def _fix_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """修复聊天历史中不完整的工具调用
 
-    根据LangGraph文档建议，移除没有对应ToolMessage的tool_calls
+    根据LangGraph文档建议，移除没有对应ToolMessage的tool_calls。
     参考: https://langchain-ai.github.io/langgraph/troubleshooting/errors/INVALID_CHAT_HISTORY/
 
-    额外修复：当 assistant 消息同时有 content 和 tool_calls，且所有 tool_calls
-    都已完整执行时，移除 tool_calls。这是因为 content 的存在表明 LLM 认为任务
-    已完成并准备回复用户，保留 tool_calls 会让后续执行误以为还有未完成的工作。
+    注意：当 assistant 消息同时有 content 和 valid_tool_calls 时，保留两者。
+    只移除 tool_calls 而保留对应的 ToolMessage 会制造孤儿 ToolMessage（违反消息
+    格式规范），反而让 LLM 无法建立调用-结果因果链。LangGraph 不会重新执行历史
+    tool_calls，因此原样保留是安全且正确的。
     """
     if not messages:
         return messages
@@ -70,16 +242,13 @@ def _fix_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 print(
                     f"🔧 修复消息历史：移除了 {len(removed_calls)} 个不完整的工具调用: {removed_calls}")
 
-            # 修复：如果消息有 content（LLM 准备回复用户），即使 tool_calls 完整也移除它们。
-            # 这表明 LLM 认为任务已完成，保留 tool_calls 会让后续执行误以为还需继续调用工具。
-            if has_content and valid_tool_calls:
-                print(
-                    f"🔧 修复消息历史：移除已完成 tool_calls（共 {len(valid_tool_calls)} 个），"
-                    f"保留 content 回复。这防止 LLM 将已完成的任务误认为需要继续执行。")
-                msg_copy = msg.copy()
-                msg_copy.pop('tool_calls', None)
-                fixed_messages.append(msg_copy)
-            elif valid_tool_calls:
+            if valid_tool_calls:
+                # Keep valid tool_calls intact together with any content.
+                # Removing tool_calls while keeping the corresponding ToolMessages
+                # creates orphan ToolMessages (invalid format) and makes the LLM
+                # unable to correlate results with calls — the opposite of what we want.
+                # LangGraph does NOT re-execute historical tool_calls on the next turn,
+                # so leaving them in place is safe and provides correct context.
                 msg_copy = msg.copy()
                 msg_copy['tool_calls'] = valid_tool_calls
                 fixed_messages.append(msg_copy)
@@ -491,6 +660,9 @@ async def langgraph_multi_agent(
         text_tools_in_list = [t for t in (tool_list or []) if t.get('type') == 'text']
         use_planner = bool(text_tools_in_list and not system_prompt)
 
+        # 创建 prompt 日志回调 handler，用于捕获每一轮 LLM 调用
+        prompt_callback = PromptLoggingCallbackHandler()
+
         if use_planner:
             # planner agent：使用第一个 text model 作为编排大脑，只负责制定计划并移交
             first_text_json = text_tools_in_list[0]
@@ -502,7 +674,7 @@ async def langgraph_multi_agent(
                 ).get('url', ''),
                 'type': 'text',
             }
-            planner_lm = _create_text_model(planner_model_info)
+            planner_lm = _create_text_model(planner_model_info).with_config(callbacks=[prompt_callback])
             write_plan_lc = tool_service.get_tool('write_plan')
             handoff_to_creator = create_handoff_tool(
                 agent_name='assistant',
@@ -517,9 +689,10 @@ async def langgraph_multi_agent(
             )
 
             # creator agent：使用 builtin model，持有所有 image/video/text gen tools
+            creator_model = orchestrator.with_config(callbacks=[prompt_callback])
             creator_agent = create_react_agent(
                 name='assistant',
-                model=orchestrator,
+                model=creator_model,
                 tools=all_lc_tools,
                 prompt=agent_system_prompt,
             )
@@ -531,9 +704,10 @@ async def langgraph_multi_agent(
             print("🗺️ 使用 planner-creator 双 agent 模式")
         else:
             # 单 agent 模式：无 text tools 或自定义 system_prompt
+            model_with_callback = orchestrator.with_config(callbacks=[prompt_callback])
             agent = create_react_agent(
                 name='assistant',
-                model=orchestrator,
+                model=model_with_callback,
                 tools=all_lc_tools,
                 prompt=agent_system_prompt,
             )
@@ -554,6 +728,9 @@ async def langgraph_multi_agent(
         model_messages = _expand_image_urls(fixed_messages)
         model_messages, token_count = _truncate_messages_by_context_window(model_messages)
         _log_payload_size(model_messages, token_count)
+        
+        # 打印完整 prompt 用于分析
+        _log_llm_prompt(model_messages, agent_system_prompt, agent_name='planner+assistant' if use_planner else 'assistant')
 
         max_retries = 3
         for attempt in range(max_retries):
