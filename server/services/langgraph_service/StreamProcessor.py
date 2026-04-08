@@ -5,6 +5,12 @@ from langchain_core.messages import AIMessageChunk, ToolCall, convert_to_openai_
 from langgraph.graph import StateGraph
 import json
 
+# Inherits from BaseException (not Exception) so it bypasses the broad
+# `except Exception` guard inside _handle_message_chunk and propagates
+# directly to the `except _PolicyViolationStop` handler in process_stream.
+class _PolicyViolationStop(BaseException):
+    """Raised when a tool result signals a non-retriable content policy violation."""
+
 
 class StreamProcessor:
     """流式处理器 - 负责处理智能体的流式输出"""
@@ -53,6 +59,15 @@ class StreamProcessor:
             ):
                 self.chunks_received += 1
                 await self._handle_chunk(chunk)
+        except _PolicyViolationStop as e:
+            # Tool returned a content policy violation — stop the agent loop
+            # immediately without letting the LLM decide whether to retry.
+            print(f"🛑 Content policy violation — stopping agent loop: {e}")
+            await self.websocket_service(self.session_id, {
+                'type': 'delta',
+                'text': str(e)
+            })
+            return
         except Exception as e:
             err_str = str(e)
             # GraphRecursionError: agent exceeded recursion_limit steps without stopping.
@@ -114,6 +129,14 @@ class StreamProcessor:
             content = ai_message_chunk.content
 
             if isinstance(ai_message_chunk, ToolMessage):
+                # Detect non-retriable content policy violation BEFORE feeding
+                # the result back to the LLM — raise BaseException subclass so
+                # it bypasses the `except Exception` guard below and is caught
+                # by process_stream's dedicated _PolicyViolationStop handler.
+                tool_content = ai_message_chunk.content if isinstance(ai_message_chunk.content, str) else ''
+                if 'Content policy violation' in tool_content:
+                    raise _PolicyViolationStop(tool_content)
+
                 # 工具调用结果之后会在 values 类型中发送到前端，这里会更快出现一些
                 oai_message = convert_to_openai_messages([ai_message_chunk])[0]
                 print('👇toolcall res oai_message', oai_message)
