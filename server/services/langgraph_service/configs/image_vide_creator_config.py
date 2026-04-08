@@ -94,7 +94,7 @@ CRITICAL TEXT TOOL RULES:
             text_tools_prompt = ""
 
         image_input_detection_prompt = f"""
-REFERENCE MEDIA RULE (checked before anything else, overrides all other instructions):
+REFERENCE MEDIA RULE (applies only to the user's input message, not to tool results):
 When the user's message contains reference media in XML format, you MUST extract and pass all file_ids directly to tool parameters — do NOT analyze or describe the media content.
 
 IMAGE INPUT DETECTION:

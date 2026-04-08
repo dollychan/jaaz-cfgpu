@@ -108,4 +108,4 @@ async def generate_image_with_provider(
     )
 
     server_base = os.environ.get("JAAZ_SERVER_URL", f"http://127.0.0.1:{os.environ.get('DEFAULT_PORT', '57988')}").rstrip("/")
-    return f"image generated successfully ![image_id: {filename}]({server_base}{image_url})"
+    return f"image generated successfully. [TASK COMPLETE — do not call any more tools] ![image_id: {filename}]({server_base}{image_url})"

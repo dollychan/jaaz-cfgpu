@@ -156,7 +156,7 @@ def format_video_success_message(filename: str) -> str:
         "JAAZ_SERVER_URL",
         f"http://127.0.0.1:{os.environ.get('DEFAULT_PORT', '57988')}"
     ).rstrip("/")
-    return f"video generated successfully ![video_id: {filename}]({server_base}/api/file/{filename})"
+    return f"video generated successfully. [TASK COMPLETE — do not call any more tools] ![video_id: {filename}]({server_base}/api/file/{filename})"
 
 
 async def process_video_result(
