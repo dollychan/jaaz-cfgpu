@@ -53,16 +53,21 @@ class StreamProcessor:
             ):
                 self.chunks_received += 1
                 await self._handle_chunk(chunk)
-        except TypeError as e:
+        except Exception as e:
+            err_str = str(e)
+            # GraphRecursionError: agent exceeded recursion_limit steps without stopping.
+            # Treat as a clean end-of-loop rather than a fatal crash.
+            if 'GraphRecursionError' in type(e).__name__ or 'recursion limit' in err_str.lower():
+                print(f"⚠️ Agent hit recursion limit — stopping stream: {e}")
+                await self.websocket_service(self.session_id, {
+                    'type': 'info',
+                    'info': '已达到最大执行步数，任务已停止。'
+                })
+                return
             # Handle API response errors (e.g., 'NoneType' object is not iterable)
-            # This is commonly caused by upstream errors / rate limits where the
-            # LLM API returns choices=null.
-            if "'NoneType' object is not iterable" in str(e):
+            if isinstance(e, TypeError) and "'NoneType' object is not iterable" in err_str:
                 print(f"❌ Upstream error detected: {e}")
-                # CRITICAL: Must raise to be caught by the retry loop in agent_service.py.
-                # Do NOT send websocket error here, or the user will see a failure
-                # toast before the retry logic has a chance to run.
-                raise e
+                raise
             raise
 
     async def _handle_chunk(self, chunk: Any) -> None:

@@ -216,13 +216,13 @@ DO NOT automatically retry failed tool calls on your own — inform the user and
 TASK COMPLETION RULES — READ CAREFULLY:
 After ALL requested images and/or videos have been successfully generated:
 1. Respond to the user with a brief summary of what was created (include links/previews if available).
-2. DO NOT call any additional generation tools.
+2. DO NOT call ANY tools — not image tools, not video tools, not text tools, not any other tool.
 3. DO NOT retry generation with modified parameters unless the user explicitly asks.
 4. DO NOT generate extra "bonus" images or videos that the user did not request.
-5. Your task is COMPLETE. Stop calling tools and respond to the user with plain text only.
+5. Your task is COMPLETE. Write your reply as plain text and stop immediately.
 
-CRITICAL: A tool result containing "generated successfully" means the task for that item is DONE. Move on to the next requested item, or if all items are done, respond to the user and stop.
-NEVER call a generation tool after all requested outputs have been produced.
+CRITICAL: A tool result containing "generated successfully" means the task for that item is DONE. Move on to the next requested item, or if all items are done, write a plain text reply to the user and stop.
+NEVER call any tool after all requested outputs have been produced.
 """
 
         full_system_prompt = (
