@@ -9,7 +9,17 @@ import json
 # `except Exception` guard inside _handle_message_chunk and propagates
 # directly to the `except _PolicyViolationStop` handler in process_stream.
 class _PolicyViolationStop(BaseException):
-    """Raised when a tool result signals a non-retriable content policy violation."""
+    """Raised when a tool result signals a non-retriable content policy violation.
+
+    Carries oai_message so process_stream can send tool_call_result to the
+    frontend and save to DB *after* the LangGraph generator is closed.
+    Raising BEFORE any `await` in _handle_message_chunk ensures the event
+    loop never switches to LangGraph's background agent task, which would
+    otherwise start the next LLM call (Call #2) during `await websocket_service`.
+    """
+    def __init__(self, tool_content: str, oai_message: Optional[Dict[str, Any]] = None):
+        super().__init__(tool_content)
+        self.oai_message = oai_message
 
 
 class StreamProcessor:
@@ -60,11 +70,26 @@ class StreamProcessor:
                 self.chunks_received += 1
                 await self._handle_chunk(chunk)
         except _PolicyViolationStop as e:
-            # Tool returned a content policy violation — stop the agent loop
-            # immediately without letting the LLM decide whether to retry.
-            # The tool_call_result was already sent to the frontend (shows in the
-            # tool call box) and saved to DB before this exception was raised.
+            # Tool returned a content policy violation.  The generator is now
+            # closed (Python calls gen.aclose() when async-for exits via exception),
+            # so LangGraph's pending agent-node task is cancelled before the LLM
+            # is invoked.  Now that we're outside the generator loop it is safe to
+            # await: send tool_call_result to the frontend (shows in tool call box)
+            # and save the ToolMessage to DB (the values chunk that normally saves
+            # it was never processed because we raised before any await above).
             print(f"🛑 Content policy violation — stopping agent loop: {e}")
+            if e.oai_message:
+                await self.websocket_service(self.session_id, {
+                    'type': 'tool_call_result',
+                    'id': e.oai_message.get('tool_call_id', ''),
+                    'message': e.oai_message
+                })
+                await self.db_service.create_message(
+                    self.session_id,
+                    'tool',
+                    json.dumps(e.oai_message)
+                )
+                self._new_responses_saved += 1
             return
         except Exception as e:
             err_str = str(e)
@@ -130,30 +155,31 @@ class StreamProcessor:
                 tool_content = ai_message_chunk.content if isinstance(ai_message_chunk.content, str) else ''
 
                 # 工具调用结果之后会在 values 类型中发送到前端，这里会更快出现一些
-                # Always send tool_call_result FIRST so the result appears in the
-                # tool call box regardless of whether it is a policy violation.
                 oai_message = convert_to_openai_messages([ai_message_chunk])[0]
+
+                # Raise BEFORE any `await` for content policy violations.
+                #
+                # WHY: LangGraph schedules the next agent node (LLM Call #2) via
+                # asyncio.create_task() *before* yielding the tool-result chunk.
+                # The first `await` in this function (websocket_service) hands
+                # control back to the event loop, which then runs the scheduled
+                # agent task and triggers the LLM call — even though we intend to
+                # stop.  By raising _PolicyViolationStop here (no await yet), the
+                # exception propagates synchronously to the `async for` loop in
+                # process_stream, which implicitly calls gen.aclose().  LangGraph's
+                # generator cleanup cancels the pending agent task *before* it can
+                # invoke the LLM.  The oai_message is carried on the exception so
+                # process_stream can send tool_call_result and save to DB after the
+                # generator is safely closed.
+                if 'Content policy violation' in tool_content:
+                    raise _PolicyViolationStop(tool_content, oai_message)
+
                 print('👇toolcall res oai_message', oai_message)
                 await self.websocket_service(self.session_id, {
                     'type': 'tool_call_result',
                     'id': ai_message_chunk.tool_call_id,
                     'message': oai_message
                 })
-
-                # Detect non-retriable content policy violation AFTER sending the
-                # tool_call_result so the frontend shows the error in the tool box.
-                # Save the ToolMessage to DB here because the values chunk that
-                # normally saves it will never arrive (we stop the loop below).
-                # Raise BaseException subclass so it bypasses the `except Exception`
-                # guard below and is caught by process_stream's dedicated handler.
-                if 'Content policy violation' in tool_content:
-                    await self.db_service.create_message(
-                        self.session_id,
-                        'tool',
-                        json.dumps(oai_message)
-                    )
-                    self._new_responses_saved += 1
-                    raise _PolicyViolationStop(tool_content)
             elif content:
                 # 发送文本内容
                 await self.websocket_service(self.session_id, {
