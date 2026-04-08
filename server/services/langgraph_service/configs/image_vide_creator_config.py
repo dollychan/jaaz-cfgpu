@@ -215,6 +215,18 @@ NEVER call any tool after all requested outputs have been produced.
             + completion_prompt           # Task completion rules
         )
 
+        # When the user supplies a custom canvas system_prompt, the full_system_prompt
+        # above is not used. Instead, agent_service appends this appendix to the
+        # custom prompt so that critical execution rules (reference media extraction,
+        # tool names, error handling, task completion) are always enforced regardless
+        # of what the user wrote in their canvas system prompt.
+        self.custom_prompt_appendix = (
+            image_input_detection_prompt  # must still detect <input_images/videos/audios>
+            + available_tools_prompt      # prevent hallucinated tool names
+            + error_handling_prompt       # content policy / error → stop, no retry
+            + completion_prompt           # task done → plain text reply, no more tools
+        )
+
         # 图像设计智能体不需要切换到其他智能体
         handoffs: List[HandoffConfig] = []
 
