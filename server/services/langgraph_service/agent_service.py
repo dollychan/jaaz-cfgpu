@@ -660,7 +660,12 @@ async def langgraph_multi_agent(
         text_tools_in_list = [t for t in (tool_list or []) if t.get('type') == 'text']
         use_planner = bool(text_tools_in_list and not system_prompt)
 
-        # 创建 prompt 日志回调 handler，用于捕获每一轮 LLM 调用
+        # 创建 prompt 日志回调 handler，用于捕获每一轮 LLM 调用。
+        # 注意：不使用 model.with_config(callbacks=[...])，因为 create_react_agent
+        # 内部调用 bind_tools() 后，模型级回调在后续 agent 节点重新调用时会丢失
+        # （LangGraph 每次执行节点时重建 RunnableConfig，模型级回调无法跨轮传播）。
+        # 正确做法：将 callbacks 放入 astream 的顶层 config，LangGraph 会将其作为
+        # 标准 RunnableConfig 键传播到所有节点的每一次调用（包括 tool 结果后的 LLM 重调用）。
         prompt_callback = PromptLoggingCallbackHandler()
 
         if use_planner:
@@ -674,7 +679,7 @@ async def langgraph_multi_agent(
                 ).get('url', ''),
                 'type': 'text',
             }
-            planner_lm = _create_text_model(planner_model_info).with_config(callbacks=[prompt_callback])
+            planner_lm = _create_text_model(planner_model_info)
             write_plan_lc = tool_service.get_tool('write_plan')
             handoff_to_creator = create_handoff_tool(
                 agent_name='assistant',
@@ -689,10 +694,9 @@ async def langgraph_multi_agent(
             )
 
             # creator agent：使用 builtin model，持有所有 image/video/text gen tools
-            creator_model = orchestrator.with_config(callbacks=[prompt_callback])
             creator_agent = create_react_agent(
                 name='assistant',
-                model=creator_model,
+                model=orchestrator,
                 tools=all_lc_tools,
                 prompt=agent_system_prompt,
             )
@@ -704,10 +708,9 @@ async def langgraph_multi_agent(
             print("🗺️ 使用 planner-creator 双 agent 模式")
         else:
             # 单 agent 模式：无 text tools 或自定义 system_prompt
-            model_with_callback = orchestrator.with_config(callbacks=[prompt_callback])
             agent = create_react_agent(
                 name='assistant',
-                model=model_with_callback,
+                model=orchestrator,
                 tools=all_lc_tools,
                 prompt=agent_system_prompt,
             )
@@ -717,10 +720,14 @@ async def langgraph_multi_agent(
             )
 
         # 7. 创建上下文并运行
+        # callbacks 放在顶层 context（非 configurable 内部），astream 展开后
+        # LangGraph 将其识别为标准 RunnableConfig 键并传播到每一次 LLM 调用，
+        # 包括 tool 执行完成后的 agent 节点重新调用。
         context = {
             'canvas_id': canvas_id,
             'session_id': session_id,
             'tool_list': tool_list or [],
+            'callbacks': [prompt_callback],
         }
 
         # 将相对图片 URL（/api/file/... 或 /api/material/serve/...）展开为
