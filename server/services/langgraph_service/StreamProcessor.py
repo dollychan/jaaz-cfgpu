@@ -32,6 +32,11 @@ class StreamProcessor:
         self.tool_calls: List[ToolCall] = []
         self.last_saved_message_index = -1
         self.last_streaming_tool_call_id: Optional[str] = None
+        # Track streaming tool calls so we can reconstruct the assistant OAI
+        # message in the _PolicyViolationStop handler when the agent's values
+        # chunk may not yet have been processed (ordering not guaranteed).
+        self._pending_tool_calls: List[Dict[str, Any]] = []   # OAI-format tool_calls
+        self._pending_tool_call_args: Dict[str, str] = {}     # call_id -> accumulated args
         # Set in process_stream; used by _handle_values_chunk for correct saving.
         # When context-window truncation reduces the input to K < M+1 messages,
         # new agent responses start at oai_messages[K], not at the DB count index M+1.
@@ -78,13 +83,32 @@ class StreamProcessor:
             # and save the ToolMessage to DB (the values chunk that normally saves
             # it was never processed because we raised before any await above).
             print(f"🛑 Content policy violation — stopping agent loop: {e}")
+            # If the agent node's values chunk was never processed (ordering
+            # issue: tools messages chunk arrived before agent values chunk),
+            # the AIMessage with tool_calls has not been saved yet.  Rebuild it
+            # from streaming data and persist it before the ToolMessage so the
+            # frontend can reconstruct the tool-call box on page reload.
+            if self._new_responses_saved == 0:
+                assistant_msg = self._build_assistant_oai_message()
+                if assistant_msg:
+                    try:
+                        await self.db_service.create_message(
+                            self.session_id,
+                            'assistant',
+                            json.dumps(assistant_msg),
+                        )
+                        self._new_responses_saved += 1
+                        print(f"✅ Saved assistant tool-call message to DB (values chunk not yet processed)")
+                    except Exception as db_err:
+                        print(f"⚠️ Failed to save assistant message to DB: {db_err}")
             if e.oai_message:
-                # Save to DB first so it is persisted even if the websocket send fails.
+                # Save ToolMessage to DB before sending over websocket so it is
+                # persisted even if the client has already disconnected.
                 try:
                     await self.db_service.create_message(
                         self.session_id,
                         'tool',
-                        json.dumps(e.oai_message)
+                        json.dumps(e.oai_message),
                     )
                     self._new_responses_saved += 1
                 except Exception as db_err:
@@ -93,7 +117,7 @@ class StreamProcessor:
                     await self.websocket_service(self.session_id, {
                         'type': 'tool_call_result',
                         'id': e.oai_message.get('tool_call_id', ''),
-                        'message': e.oai_message
+                        'message': e.oai_message,
                     })
                 except Exception as ws_err:
                     print(f"⚠️ Failed to send policy-violation tool_call_result over websocket: {ws_err}")
@@ -204,9 +228,43 @@ class StreamProcessor:
             print('🟠error', e)
             traceback.print_stack()
 
+    def _build_assistant_oai_message(self) -> Optional[Dict[str, Any]]:
+        """Reconstruct the OAI assistant message from streaming tool-call data.
+
+        Used when the agent node's values chunk has not yet been processed
+        (i.e. _new_responses_saved == 0) at the time _PolicyViolationStop is
+        raised, so we can still persist the AIMessage to DB.
+        """
+        if not self._pending_tool_calls:
+            return None
+        tool_calls = []
+        for tc in self._pending_tool_calls:
+            tc_id = tc.get('id', '')
+            # Prefer accumulated streamed args; fall back to initial snapshot.
+            args = self._pending_tool_call_args.get(tc_id) or tc['function'].get('arguments', '{}')
+            tool_calls.append({
+                'id': tc_id,
+                'type': 'function',
+                'function': {'name': tc['function']['name'], 'arguments': args},
+            })
+        return {'role': 'assistant', 'content': None, 'tool_calls': tool_calls}
+
     async def _handle_tool_calls(self, tool_calls: List[ToolCall]) -> None:
         """处理工具调用"""
         self.tool_calls = [tc for tc in tool_calls if tc.get('name')]
+        # Snapshot for _build_assistant_oai_message — args may still be streaming.
+        self._pending_tool_calls = [
+            {
+                'id': tc.get('id', ''),
+                'type': 'function',
+                'function': {
+                    'name': tc.get('name', ''),
+                    'arguments': json.dumps(tc.get('args', {})) if isinstance(tc.get('args'), dict) else (tc.get('args') or '{}'),
+                },
+            }
+            for tc in self.tool_calls
+        ]
+        self._pending_tool_call_args = {}
         print('😘tool_call event', tool_calls)
 
         # 需要确认的工具列表
@@ -245,10 +303,15 @@ class StreamProcessor:
                 self.last_streaming_tool_call_id = tool_call_chunk.get('id')
             else:
                 if self.last_streaming_tool_call_id:
+                    chunk_args = tool_call_chunk.get('args') or ''
+                    # Accumulate args so _build_assistant_oai_message has the full JSON.
+                    self._pending_tool_call_args[self.last_streaming_tool_call_id] = (
+                        self._pending_tool_call_args.get(self.last_streaming_tool_call_id, '') + chunk_args
+                    )
                     await self.websocket_service(self.session_id, {
                         'type': 'tool_call_arguments',
                         'id': self.last_streaming_tool_call_id,
-                        'text': tool_call_chunk.get('args')
+                        'text': chunk_args,
                     })
                 else:
                     print('🟠no last_streaming_tool_call_id', tool_call_chunk)
