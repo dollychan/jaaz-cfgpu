@@ -293,6 +293,22 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
                                 error_data = await response.json()
                             except Exception:
                                 error_data = await response.text()
+                            # Check if this is a non-retriable content policy error
+                            error_code = ""
+                            if isinstance(error_data, dict):
+                                error_code = (error_data.get("error") or {}).get("code", "")
+                            NON_RETRIABLE_PREFIXES = (
+                                "OutputVideoSensitiveContentDetected",
+                                "InputSensitiveContentDetected",
+                                "InputImageSensitiveContentDetected",
+                                "ContentPolicyViolation",
+                            )
+                            if error_code and any(error_code.startswith(p) for p in NON_RETRIABLE_PREFIXES):
+                                raise ContentPolicyError(
+                                    f"Content policy violation ({error_code}): the prompt or input media was rejected. "
+                                    f"STOP. Do NOT retry with any other tool. "
+                                    f"Tell the user their content was rejected and ask them to change the prompt or input media."
+                                )
                             raise Exception(f"CFGPU video generation task creation failed: {error_data}")
 
                         result = await response.json()
