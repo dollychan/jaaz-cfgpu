@@ -192,9 +192,14 @@ async def generate_video_with_provider(
 
     except ContentPolicyError as e:
         print(f"🎥 Content policy block for {model_name}: {e}")
-        # Raise so LangGraph ToolNode creates a status="error" ToolMessage.
-        # The LLM sees a genuine failure and stops retrying.
-        raise
+        # Return a string (not raise) so LangGraph creates a status="success" ToolMessage.
+        # A status="error" ToolMessage causes the LLM to autonomously decide whether to retry;
+        # returning explicit STOP text as tool content is more reliably followed.
+        return (
+            f"Content policy violation: {e}\n\n"
+            "STOP. Do NOT retry with any other tool or modified parameters. "
+            "Tell the user their content was rejected due to content policy and ask them to change the prompt or input media."
+        )
 
     except Exception as e:
         print(f"🎥 Error generating video with {model_name}: {e}")
