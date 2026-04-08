@@ -317,6 +317,22 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
                         print(f"🎥 CFGPU task creation response (full): {result}")
 
                     if not task_id:
+                        # API may return HTTP 200 with an error body (no task_id).
+                        # Check for non-retriable content policy codes before raising generic error.
+                        error_body = result.get("error") or {}
+                        err_code_body = error_body.get("code", "") if isinstance(error_body, dict) else ""
+                        NON_RETRIABLE_PREFIXES_BODY = (
+                            "OutputVideoSensitiveContentDetected",
+                            "InputSensitiveContentDetected",
+                            "InputImageSensitiveContentDetected",
+                            "ContentPolicyViolation",
+                        )
+                        if err_code_body and any(err_code_body.startswith(p) for p in NON_RETRIABLE_PREFIXES_BODY):
+                            raise ContentPolicyError(
+                                f"Content policy violation ({err_code_body}): the prompt or input media was rejected. "
+                                f"STOP. Do NOT retry with any other tool. "
+                                f"Tell the user their content was rejected and ask them to change the prompt or input media."
+                            )
                         raise Exception(f"CFGPU video generation task creation failed: {result}")
 
                     print(f"🎥 CFGPU task created, task_id: {task_id}")
