@@ -103,14 +103,18 @@ TEXT GENERATION TOOLS:
 You have access to the following text model tool(s):
 {tool_lines}
 
-Use them when the task requires:
+Use them ONLY when the task requires:
 - Long-form creative writing (scripts, stories, product descriptions, articles)
 - Deep reasoning, analysis, or summarization
 - Translating or refining text before image/video generation
-- Any step where high-quality text output is the primary deliverable
 
 You MAY call a text tool BEFORE generating images or videos when preparation text improves the result
 (e.g., write a detailed scene description first, then generate the image from that description).
+
+CRITICAL TEXT TOOL RULES:
+1. For simple conversational questions (greetings, "what model are you", "who are you", etc.) — answer DIRECTLY in plain text. Do NOT call any text tool.
+2. Call each text tool AT MOST ONCE per user request.
+3. After a text tool returns a result, output the result to the user and STOP immediately. Do NOT call any tool again (not text tools, not image tools, not video tools).
 """
         else:
             text_tools_prompt = ""
