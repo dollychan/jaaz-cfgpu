@@ -79,17 +79,24 @@ class StreamProcessor:
             # it was never processed because we raised before any await above).
             print(f"🛑 Content policy violation — stopping agent loop: {e}")
             if e.oai_message:
-                await self.websocket_service(self.session_id, {
-                    'type': 'tool_call_result',
-                    'id': e.oai_message.get('tool_call_id', ''),
-                    'message': e.oai_message
-                })
-                await self.db_service.create_message(
-                    self.session_id,
-                    'tool',
-                    json.dumps(e.oai_message)
-                )
-                self._new_responses_saved += 1
+                # Save to DB first so it is persisted even if the websocket send fails.
+                try:
+                    await self.db_service.create_message(
+                        self.session_id,
+                        'tool',
+                        json.dumps(e.oai_message)
+                    )
+                    self._new_responses_saved += 1
+                except Exception as db_err:
+                    print(f"⚠️ Failed to save policy-violation ToolMessage to DB: {db_err}")
+                try:
+                    await self.websocket_service(self.session_id, {
+                        'type': 'tool_call_result',
+                        'id': e.oai_message.get('tool_call_id', ''),
+                        'message': e.oai_message
+                    })
+                except Exception as ws_err:
+                    print(f"⚠️ Failed to send policy-violation tool_call_result over websocket: {ws_err}")
             return
         except Exception as e:
             err_str = str(e)
