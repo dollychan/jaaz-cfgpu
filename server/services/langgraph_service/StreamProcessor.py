@@ -62,11 +62,9 @@ class StreamProcessor:
         except _PolicyViolationStop as e:
             # Tool returned a content policy violation — stop the agent loop
             # immediately without letting the LLM decide whether to retry.
+            # The tool_call_result was already sent to the frontend (shows in the
+            # tool call box) and saved to DB before this exception was raised.
             print(f"🛑 Content policy violation — stopping agent loop: {e}")
-            await self.websocket_service(self.session_id, {
-                'type': 'delta',
-                'text': str(e)
-            })
             return
         except Exception as e:
             err_str = str(e)
@@ -129,15 +127,11 @@ class StreamProcessor:
             content = ai_message_chunk.content
 
             if isinstance(ai_message_chunk, ToolMessage):
-                # Detect non-retriable content policy violation BEFORE feeding
-                # the result back to the LLM — raise BaseException subclass so
-                # it bypasses the `except Exception` guard below and is caught
-                # by process_stream's dedicated _PolicyViolationStop handler.
                 tool_content = ai_message_chunk.content if isinstance(ai_message_chunk.content, str) else ''
-                if 'Content policy violation' in tool_content:
-                    raise _PolicyViolationStop(tool_content)
 
                 # 工具调用结果之后会在 values 类型中发送到前端，这里会更快出现一些
+                # Always send tool_call_result FIRST so the result appears in the
+                # tool call box regardless of whether it is a policy violation.
                 oai_message = convert_to_openai_messages([ai_message_chunk])[0]
                 print('👇toolcall res oai_message', oai_message)
                 await self.websocket_service(self.session_id, {
@@ -145,6 +139,21 @@ class StreamProcessor:
                     'id': ai_message_chunk.tool_call_id,
                     'message': oai_message
                 })
+
+                # Detect non-retriable content policy violation AFTER sending the
+                # tool_call_result so the frontend shows the error in the tool box.
+                # Save the ToolMessage to DB here because the values chunk that
+                # normally saves it will never arrive (we stop the loop below).
+                # Raise BaseException subclass so it bypasses the `except Exception`
+                # guard below and is caught by process_stream's dedicated handler.
+                if 'Content policy violation' in tool_content:
+                    await self.db_service.create_message(
+                        self.session_id,
+                        'tool',
+                        json.dumps(oai_message)
+                    )
+                    self._new_responses_saved += 1
+                    raise _PolicyViolationStop(tool_content)
             elif content:
                 # 发送文本内容
                 await self.websocket_service(self.session_id, {
