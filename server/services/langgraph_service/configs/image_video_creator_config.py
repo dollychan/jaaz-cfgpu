@@ -54,6 +54,14 @@ AVAILABLE IMAGE/VIDEO TOOLS (use ONLY these exact tool names, do not invent othe
 
 CRITICAL: NEVER call a tool name that is not in the list above. If the required tool is not listed, tell the user it is not available.
 """
+        else:
+            # No image/video tools available — the creator must report this to the user.
+            available_tools_prompt = """
+NO IMAGE/VIDEO TOOLS AVAILABLE:
+You have been invoked but no image or video generation tools are currently available.
+Tell the user: "No image or video generation tools are available. Please select at least one image or video model before submitting."
+Do NOT attempt to generate any media. Do NOT retry. Your task is to inform the user and stop.
+"""
 
         # Issue 4.1: describe available text tools so LLM knows when to call them
         text_tools = [t for t in tool_list if t.get('type') == 'text']
@@ -242,7 +250,7 @@ If any steps were skipped due to errors (see ERROR CLASSIFICATION RULES above):
         # of what the user wrote in their canvas system prompt.
         self.custom_prompt_appendix = (
             image_input_detection_prompt  # must still detect <input_images/videos/audios>
-            + available_tools_prompt      # prevent hallucinated tool names
+            + available_tools_prompt      # prevent hallucinated tool names OR report no-tools error
             + error_handling_prompt       # content policy / error → stop, no retry
             + completion_prompt           # task done → plain text reply, no more tools
         )
