@@ -812,8 +812,9 @@ async def langgraph_multi_agent(
         creator_prompt = _build_creator_prompt(tool_list, system_prompt)
 
         # 5. 决定是否使用 planner-creator 双 agent 模式
+        # 只要前端传了 text tools，就用 planner；否则单 agent
         text_tools_in_list = [t for t in (tool_list or []) if t.get('type') == 'text']
-        use_planner = bool(text_tools_in_list and not system_prompt)
+        use_planner = bool(text_tools_in_list)
 
         if not media_lc_tools:
             print("⚠️ 无可用 image/video 工具，creator agent 将向用户报告")
