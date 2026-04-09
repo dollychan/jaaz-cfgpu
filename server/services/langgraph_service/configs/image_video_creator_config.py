@@ -178,17 +178,30 @@ BATCH GENERATION RULES:
 
         error_handling_prompt = """
 
-ERROR HANDLING INSTRUCTIONS:
-When a tool returns a message starting with "Image generation failed:" or "Video generation failed:", you MUST:
-1. IMMEDIATELY STOP calling any tools. Do NOT retry the same tool or try a different tool.
-2. Respond to the user in plain text explaining what went wrong.
-3. Based on the error type, suggest ONE of the following actions to the user (do not act on it yourself):
-   - Sensitive/flagged content: ask the user to rephrase with more neutral language
-   - API/server error (HTTP 500, busy): the user may try sending the request again later
-   - Other errors: describe the issue and ask for clarification
+ERROR CLASSIFICATION RULES — follow exactly, no free-form judgment:
 
-CRITICAL: After any tool error, your next action MUST be a plain text response to the user — never another tool call.
-DO NOT automatically retry failed tool calls on your own — inform the user and stop.
+CONTENT_POLICY_VIOLATION
+  Trigger: tool result contains "Content policy violation"
+  Action:  STOP immediately. Do NOT retry with any tool or modified prompt.
+           Tell the user their request was rejected due to content policy.
+
+SERVICE_TIMEOUT
+  Trigger: tool result contains "timed out", "timeout", or "504"
+  Action:  Retry the SAME tool with the SAME parameters. Max 2 retries.
+           If still failing after 2 retries: skip this step, record the failure,
+           continue with remaining steps.
+
+INSUFFICIENT_BALANCE
+  Trigger: tool result contains "balance", "quota exceeded", or "402"
+  Action:  STOP all tasks immediately.
+           Tell the user their account balance or API quota is insufficient.
+
+OTHER TOOL ERRORS (default)
+  Trigger: tool result contains "Image generation failed:" or "Video generation failed:"
+  Action:  Skip this step. Record the failure. Continue with remaining steps.
+
+CRITICAL: Never call any tool after a CONTENT_POLICY_VIOLATION or INSUFFICIENT_BALANCE error.
+Your next action after those two must be a plain text message to the user.
 """
 
         completion_prompt = """
@@ -203,6 +216,13 @@ After ALL requested images and/or videos have been successfully generated:
 
 CRITICAL: A tool result containing "generated successfully" means the task for that item is DONE. Move on to the next requested item, or if all items are done, write a plain text reply to the user and stop.
 NEVER call any tool after all requested outputs have been produced.
+
+PARTIAL FAILURE SUMMARY:
+If any steps were skipped due to errors (see ERROR CLASSIFICATION RULES above):
+- Include a summary at the end of your reply.
+- Format: "✅ Completed: N items | ❌ Failed: M items (reason per item)"
+- A skipped step is not a reason to abandon remaining steps — continue unless
+  CONTENT_POLICY_VIOLATION or INSUFFICIENT_BALANCE was encountered.
 """
 
         full_system_prompt = (

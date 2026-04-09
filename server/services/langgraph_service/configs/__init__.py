@@ -6,14 +6,10 @@
 
 from .base_config import BaseAgentConfig, create_handoff_tool, ToolConfig
 from .planner_config import PlannerAgentConfig
-from .image_designer_config import ImageDesignerAgentConfig
-from .video_designer_config import VideoDesignerAgentConfig
 
 __all__ = [
     'BaseAgentConfig',
     'ToolConfig',
     'create_handoff_tool',
     'PlannerAgentConfig',
-    'ImageDesignerAgentConfig',
-    'VideoDesignerAgentConfig',
 ]

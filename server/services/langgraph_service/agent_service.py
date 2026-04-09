@@ -651,13 +651,13 @@ async def langgraph_multi_agent(
             )
 
         # 4. 构建 system prompt
-        from .configs.image_vide_creator_config import ImageVideoCreatorAgentConfig
+        from .configs.image_video_creator_config import ImageVideoCreatorAgentConfig
         creator_config = ImageVideoCreatorAgentConfig(tool_list or [])
 
         if system_prompt:
             # 用户在 Canvas 设置了自定义 system_prompt：保留用户意图，
             # 但必须追加关键执行规则（引用媒体检测、合法工具列表、内容政策停止、任务完成）。
-            # 否则自定义 prompt 会完全绕过 image_vide_creator_config 里的所有安全机制，
+            # 否则自定义 prompt 会完全绕过 image_video_creator_config 里的所有安全机制，
             # 导致 LLM 改写用户 prompt、不识别 <input_images>、任务完成后继续调用工具等问题。
             agent_system_prompt = system_prompt + "\n\n" + creator_config.custom_prompt_appendix
         else:
