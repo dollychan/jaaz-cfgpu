@@ -236,9 +236,19 @@ def _fix_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                         removed_calls.append(tool_call_id)
                     continue
 
+                # Skip phantom tool_calls with empty or missing type/function fields.
+                # The planner LLM sometimes emits tool_calls with type='' or no function.
+                tc_type = tool_call.get('type', '')
+                fn = tool_call.get('function')
+                if not tc_type:
+                    tc_type = 'function'
+                    tool_call['type'] = 'function'
+                if not fn or not fn.get('name'):
+                    removed_calls.append(tool_call_id or '(no_id)')
+                    continue
+
                 # Qwen/Dashscope requires function.arguments to be a non-null string.
                 # Fix any tool_calls with missing or null arguments.
-                fn = tool_call.get('function', {})
                 if fn is None:
                     fn = {}
                     tool_call['function'] = fn
