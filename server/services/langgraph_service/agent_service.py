@@ -851,10 +851,20 @@ async def langgraph_multi_agent(
         model_messages, token_count = _truncate_messages_by_context_window(model_messages)
         _log_payload_size(model_messages, token_count)
 
-        # 打印 prompt 日志
+        # 打印 prompt 日志：只打印实际已知的消息
         if use_planner:
+            # Planner 接收用户消息 → 打印完整 prompt
             _log_llm_prompt(model_messages, planner_prompt or '', agent_name='planner')
-            _log_llm_prompt([], creator_prompt, agent_name='creator')
+            # Creator 的消息来自 planner handoff，此时无法预知 → 只打印 system prompt
+            print(f"\n{'='*100}")
+            print(f"📝 [LLM PROMPT LOG] Agent: creator (messages unknown — from planner handoff)")
+            print(f"{'='*100}")
+            print(f"{'─'*60}")
+            print(f"  SYSTEM PROMPT (前 3000 字符):")
+            print(f"{'─'*60}")
+            preview = creator_prompt if len(creator_prompt) <= 3000 else creator_prompt[:3000] + f"\n... [已截断，总长度 {len(creator_prompt)} 字符]"
+            print(preview)
+            print(f"{'='*100}\n")
         else:
             _log_llm_prompt(model_messages, creator_prompt, agent_name='creator')
 
