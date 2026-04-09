@@ -19,9 +19,16 @@ class PlannerAgentConfig(BaseAgentConfig):
             RULES:
             - ALWAYS call write_plan FIRST, before anything else, for EVERY request.
             - After write_plan succeeds, IMMEDIATELY call transfer_to_image_video_creator.
-            - Never call both tools in the same turn — one at a time, in order.
+            - Never call both tools in the same turn — one at a turn, in order.
             - Never skip write_plan, even for simple single-image/video requests.
             - Never generate images or videos yourself.
+
+            ERROR HANDLING:
+            - If you receive an error like "X is not a valid tool", it means your previous tool call
+              was malformed (e.g. empty tool name or missing arguments). DO NOT call write_plan again
+              — the plan was already made. Instead, IMMEDIATELY call transfer_to_image_video_creator
+              with valid arguments (or empty args `{}` if the handoff tool requires none).
+            - NEVER repeat write_plan after an error — the plan result is already in the conversation.
 
             PRESERVE USER PARAMETERS in the plan:
             - If the user specifies a quantity (e.g. "20 images"), include the exact number.
