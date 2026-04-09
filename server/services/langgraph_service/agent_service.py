@@ -585,20 +585,18 @@ async def langgraph_multi_agent(
         # 1. 获取内置编排模型
         orchestrator = _create_builtin_model()
 
-        # 2. 构建工具列表 — 区分 text tools（给 Planner）和 media tools（给 Creator）
-        all_lc_tools: List[Any] = []          # 所有 LangChain 工具
-        text_lc_tools: List[Any] = []         # text generation tools（→ Planner）
-        media_lc_tools: List[Any] = []        # image/video tools（→ Creator）
+        # 2. 构建工具列表 — text tools → Planner；image/video tools → Creator
+        text_lc_tools: List[Any] = []   # text generation tools（→ Planner）
+        media_lc_tools: List[Any] = []  # image/video tools（→ Creator）
 
-        # 向后兼容：旧前端传来的 text_model 也作为 text tool 注入
+        # 向后兼容：旧前端传来的 text_model 也作为 text tool 注入给 Planner
         if has_text_model:
             text_tool = _create_text_generation_tool(dict(text_model))
             if text_tool:
                 text_lc_tools.append(text_tool)
-                all_lc_tools.append(text_tool)
                 print(f"✅ 添加 text tool（来自 text_model）: {text_tool.name}")
 
-        # 遍历 tool_list
+        # 遍历 tool_list，按类型分流
         for tool_json in (tool_list or []):
             tool_type = tool_json.get('type', '')
             tool_id = tool_json.get('id', '')
@@ -608,29 +606,27 @@ async def langgraph_multi_agent(
                 txt_tool = _create_text_generation_tool(dict(tool_json))
                 if txt_tool:
                     text_lc_tools.append(txt_tool)
-                    all_lc_tools.append(txt_tool)
                     print(f"✅ 添加 text tool（来自 tool_list）: {txt_tool.name}")
             else:
                 # image/video → 从 tool_service 获取 → 给 Creator
                 lc_t = tool_service.get_tool(tool_id)
                 if lc_t:
                     media_lc_tools.append(lc_t)
-                    all_lc_tools.append(lc_t)
                 else:
                     print(f"⚠️ 工具未找到: {tool_id}")
 
-        print(f"🛠️ 所有可用工具: {[t.name for t in all_lc_tools]}")
         print(f"📝 Text tools (→ Planner): {[t.name for t in text_lc_tools]}")
         print(f"🎨 Media tools (→ Creator): {[t.name for t in media_lc_tools]}")
 
         # 3. 如果没有内置模型，fallback 到第一个 text tool 作为编排器
         if not orchestrator:
             if text_lc_tools:
-                # 取第一个 text tool 对应的 model info，创建 orchestrator
                 if has_text_model:
+                    # 旧前端传来的 text_model 作为编排器
                     orchestrator = _create_text_model(text_model)
-                    all_lc_tools = media_lc_tools  # text model 已作为 orchestrator，不再作为 tool
-                    text_lc_tools = []             # Planner 将使用 orchestrator 本身，不需要额外 text tool
+                    # 只移除来自 text_model 的那个 text tool，保留 tool_list 中的 text tools 给 Planner
+                    text_model_tool_name = f"generate_text_with_{text_model.get('provider', '')}_{(text_model.get('model') or text_model.get('id', '')).replace('/', '_').replace('-', '_').replace('.', '_').replace(':', '_').replace(' ', '_')}"
+                    text_lc_tools = [t for t in text_lc_tools if t.name != text_model_tool_name]
                     print(f"⚠️ builtin_model 未配置，使用 text_model 作为编排器（向后兼容模式）")
                 else:
                     # 从 tool_list 找第一个 text type
@@ -643,10 +639,9 @@ async def langgraph_multi_agent(
                         url = config_service.app_config.get(provider, {}).get('url', '')
                         lm: ModelInfo = {'provider': provider, 'model': model_name, 'url': url, 'type': 'text'}
                         orchestrator = _create_text_model(lm)
-                        # 从 tool list 中移除这个 text tool（避免模型调用自己）
+                        # 只移除作为编排器的那个 text tool，保留其余 text tools 给 Planner
                         tool_name_to_remove = text_lc_tools[0].name
-                        all_lc_tools = [t for t in all_lc_tools if t.name != tool_name_to_remove]
-                        text_lc_tools = [t for t in text_lc_tools if t.name != tool_name_to_remove]
+                        text_lc_tools = text_lc_tools[1:]
                         print(f"⚠️ builtin_model 未配置，使用 {model_name} 作为编排器（fallback 模式）")
 
         if not orchestrator:
@@ -655,7 +650,7 @@ async def langgraph_multi_agent(
                 "Please configure a built-in model in settings, or select a text model tool."
             )
 
-        # 4. 构建 system prompt
+        # 4. 构建 Creator system prompt
         from .configs.image_video_creator_config import ImageVideoCreatorAgentConfig
         creator_config = ImageVideoCreatorAgentConfig(tool_list or [])
 
@@ -664,9 +659,9 @@ async def langgraph_multi_agent(
             # 但必须追加关键执行规则（引用媒体检测、合法工具列表、内容政策停止、任务完成）。
             # 否则自定义 prompt 会完全绕过 image_video_creator_config 里的所有安全机制，
             # 导致 LLM 改写用户 prompt、不识别 <input_images>、任务完成后继续调用工具等问题。
-            agent_system_prompt = system_prompt + "\n\n" + creator_config.custom_prompt_appendix
+            creator_prompt = system_prompt + "\n\n" + creator_config.custom_prompt_appendix
         else:
-            agent_system_prompt = creator_config.system_prompt
+            creator_prompt = creator_config.system_prompt
 
         # 5. 判断是否使用 planner-creator 双 agent 模式（Issue 4.2）
         # 条件：tool_list 中有 text tools，且没有自定义 system_prompt（自定义时走单 agent）
@@ -681,20 +676,15 @@ async def langgraph_multi_agent(
         # 标准 RunnableConfig 键传播到所有节点的每一次调用（包括 tool 结果后的 LLM 重调用）。
         prompt_callback = PromptLoggingCallbackHandler()
 
+        # 5b. 无 media tools 时不抛 ValueError — creator 的 available_tools_prompt
+        # 已包含 "NO IMAGE/VIDEO TOOLS AVAILABLE" 友好提示，让 agent 直接告知用户。
+        if not media_lc_tools:
+            print("⚠️ 无可用 image/video 工具，creator agent 将向用户报告")
+
+        agents: List[Any] = []
+
         if use_planner:
-            # === Planner-Creator 双 agent 模式 ===
-
-            # Req 3: Creator 必须至少有一个 image 或 video 工具可用，否则直接报错
-            image_tools_in_list = [t for t in (tool_list or []) if t.get('type') == 'image']
-            video_tools_in_list = [t for t in (tool_list or []) if t.get('type') == 'video']
-            if not image_tools_in_list and not video_tools_in_list and not media_lc_tools:
-                raise ValueError(
-                    "Planner 模式下未找到可用的图像或视频生成工具。"
-                    "请至少选择一个 image 或 video 模型，然后再提交任务。"
-                )
-
-            # Planner agent：使用第一个 text model 作为编排大脑
-            # 持有 write_plan + handoff_to_creator + text generation tools
+            # === Planner agent（双 agent 模式）===
             first_text_json = text_tools_in_list[0]
             planner_model_info: ModelInfo = {
                 'provider': first_text_json.get('provider', ''),
@@ -710,27 +700,35 @@ async def langgraph_multi_agent(
                 agent_name='assistant',
                 description='Transfer to the image/video creator agent to execute the plan.',
             )
-
-            # Req 1: Planner 持有 text tools + write_plan + handoff
+            # Planner 持有：write_plan + handoff + 所有 text generation tools
             planner_tools = [t for t in [write_plan_lc, handoff_to_creator] + text_lc_tools if t is not None]
 
-            # Req 2: 构建 Planner prompt，告知可用 text tools
-            planner_config = PlannerAgentConfig()
-            planner_prompt = planner_config.system_prompt
+            # 构建 Planner prompt：动态注入 text tool 工作流说明
+            planner_base_prompt = PlannerAgentConfig().system_prompt
             if text_lc_tools:
                 tool_names = ', '.join(t.name for t in text_lc_tools)
-                planner_prompt = planner_prompt.replace(
+                planner_prompt = planner_base_prompt.replace(
                     'Your ONLY two tools are: write_plan and transfer_to_image_video_creator.',
-                    f'You have the following tools: write_plan, transfer_to_image_video_creator, and text generation tools ({tool_names}).'
-                )
-                planner_prompt += f"""
+                    f'You have these tools: write_plan, transfer_to_image_video_creator, and text generation tools ({tool_names}).'
+                ) + f"""
 
-            AVAILABLE TEXT TOOLS (use for complex text generation, scripts, or analysis):
-            {tool_names}
-            - You may call text tools BEFORE write_plan if the task requires preparation text.
-            - After using text tools, ALWAYS call write_plan to create the execution plan.
-            - After write_plan, ALWAYS call transfer_to_image_video_creator.
+TEXT GENERATION WORKFLOW (mandatory when text tools are available):
+Available text tools: {tool_names}
+
+For tasks requiring scripts, storylines, marketing copy, character descriptions,
+scene details, or other rich textual content — you MUST use a text tool:
+  Step 1. Call the text generation tool with a detailed prompt for the content needed.
+  Step 2. Take the FULL output returned — do NOT summarize, shorten, or paraphrase it.
+  Step 3. Place that exact text as the `description` of the relevant write_plan step(s).
+          The creator agent reads step descriptions verbatim — completeness is essential.
+  Step 4. Call write_plan with the steps populated from the text tool output.
+  Step 5. Call transfer_to_image_video_creator.
+
+For simple tasks (e.g. "generate 1 image of a cat"), you may skip the text tool
+and call write_plan directly.
 """
+            else:
+                planner_prompt = planner_base_prompt
 
             planner_agent = create_react_agent(
                 name='planner',
@@ -738,40 +736,24 @@ async def langgraph_multi_agent(
                 tools=planner_tools,
                 prompt=planner_prompt,
             )
-
-            # Creator agent：使用 builtin model，持有所有 image/video media tools（不含 text tools）
-            creator_agent = create_react_agent(
-                name='assistant',
-                model=orchestrator,
-                tools=media_lc_tools,
-                prompt=agent_system_prompt,
-            )
-
-            swarm = create_swarm(
-                agents=[planner_agent, creator_agent],
-                default_active_agent='planner',
-            )
+            agents.append(planner_agent)
             print("🗺️ 使用 planner-creator 双 agent 模式")
         else:
-            # 单 agent 模式：无 text tools 或自定义 system_prompt
-            # Req 3: 无 planner 时也需要至少有一个 media tool
-            image_tools_in_list = [t for t in (tool_list or []) if t.get('type') == 'image']
-            video_tools_in_list = [t for t in (tool_list or []) if t.get('type') == 'video']
-            if not image_tools_in_list and not video_tools_in_list and not media_lc_tools:
-                raise ValueError(
-                    "未找到可用的图像或视频生成工具。"
-                    "请至少选择一个 image 或 video 模型，然后再提交任务。"
-                )
-            agent = create_react_agent(
-                name='assistant',
-                model=orchestrator,
-                tools=all_lc_tools,
-                prompt=agent_system_prompt,
-            )
-            swarm = create_swarm(
-                agents=[agent],
-                default_active_agent='assistant',
-            )
+            print("🎨 使用 creator 单 agent 模式")
+
+        # === Creator agent（planner 和单 agent 模式共享）===
+        creator_agent = create_react_agent(
+            name='assistant',
+            model=orchestrator,
+            tools=media_lc_tools,
+            prompt=creator_prompt,
+        )
+        agents.append(creator_agent)
+
+        swarm = create_swarm(
+            agents=agents,
+            default_active_agent='planner' if use_planner else 'assistant',
+        )
 
         # 7. 创建上下文并运行
         # callbacks 放在顶层 context（非 configurable 内部），astream 展开后
@@ -789,9 +771,13 @@ async def langgraph_multi_agent(
         model_messages = _expand_image_urls(fixed_messages)
         model_messages, token_count = _truncate_messages_by_context_window(model_messages)
         _log_payload_size(model_messages, token_count)
-        
-        # 打印完整 prompt 用于分析
-        _log_llm_prompt(model_messages, agent_system_prompt, agent_name='planner+assistant' if use_planner else 'assistant')
+
+        # 打印 prompt：planner 模式下分别打印两个 agent 的 prompt
+        if use_planner:
+            _log_llm_prompt(model_messages, planner_prompt, agent_name='planner')
+            _log_llm_prompt([], creator_prompt, agent_name='creator')
+        else:
+            _log_llm_prompt(model_messages, creator_prompt, agent_name='creator')
 
         max_retries = 3
         for attempt in range(max_retries):
