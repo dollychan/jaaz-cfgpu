@@ -113,6 +113,9 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
   const durationSliderRef = useRef<HTMLDivElement>(null)
   const MIN_DURATION = 4
   const MAX_DURATION = 15
+  const [resolution, setResolution] = useState<string>(
+    () => localStorage.getItem('chat_resolution') ?? '480p'
+  )
 
   const [assetPickerOpen, setAssetPickerOpen] = useState(false)
   const [assetSearchQuery, setAssetSearchQuery] = useState('')
@@ -277,7 +280,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
       return
     }
 
-    // Add aspect ratio, quantity and duration information if not default values
+    // Add aspect ratio, quantity, duration and resolution information if not default values
     let additionalInfo = ''
     if (selectedAspectRatio !== 'auto') {
       additionalInfo += `<aspect_ratio>${selectedAspectRatio}</aspect_ratio>\n`
@@ -287,6 +290,9 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
     }
     if (duration !== 5) {
       additionalInfo += `<duration>${duration}</duration>\n`
+    }
+    if (resolution !== '480p') {
+      additionalInfo += `<resolution>${resolution}</resolution>\n`
     }
 
     if (additionalInfo) {
@@ -368,6 +374,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
     selectedAspectRatio,
     quantity,
     duration,
+    resolution,
     authStatus.is_logged_in,
     setShowLoginDialog,
     balance,
@@ -806,7 +813,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
                               alt={rec.name || 'Material'}
                               className="h-16 w-full rounded object-cover"
                               onError={(e) => {
-                                ;(e.target as HTMLImageElement).style.display = 'none'
+                                ; (e.target as HTMLImageElement).style.display = 'none'
                               }}
                             />
                           ) : rec.file_type === 'video' ? (
@@ -992,6 +999,37 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
               )}
             </AnimatePresence>
           </div>
+
+          {/* Resolution Selector */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="flex items-center gap-1"
+                size={'sm'}
+              >
+                <span className="text-sm">{resolution}</span>
+                <ChevronDown className="size-3 opacity-50" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-24">
+              {['480p', '720p'].map((res) => (
+                <DropdownMenuItem
+                  key={res}
+                  onClick={() => {
+                    setResolution(res)
+                    localStorage.setItem('chat_resolution', res)
+                  }}
+                  className="flex items-center justify-between"
+                >
+                  <span>{res}</span>
+                  {resolution === res && (
+                    <div className="size-2 rounded-full bg-primary" />
+                  )}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {pending ? (
