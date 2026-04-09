@@ -818,6 +818,8 @@ async def langgraph_multi_agent(
         if not media_lc_tools:
             print("⚠️ 无可用 image/video 工具，creator agent 将向用户报告")
 
+        print(f"🔍 use_planner={use_planner} | text_tools_in_list={len(text_tools_in_list)} | system_prompt={'yes' if system_prompt else 'no'}")
+
         # 6. 创建 agents
         agents: List[Any] = []
         planner_prompt = None
