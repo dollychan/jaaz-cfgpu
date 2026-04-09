@@ -231,10 +231,21 @@ def _fix_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
             for tool_call in msg.get('tool_calls', []):
                 tool_call_id = tool_call.get('id')
-                if tool_call_id in tool_call_ids:
-                    valid_tool_calls.append(tool_call)
-                elif tool_call_id:
-                    removed_calls.append(tool_call_id)
+                if tool_call_id not in tool_call_ids:
+                    if tool_call_id:
+                        removed_calls.append(tool_call_id)
+                    continue
+
+                # Qwen/Dashscope requires function.arguments to be a non-null string.
+                # Fix any tool_calls with missing or null arguments.
+                fn = tool_call.get('function', {})
+                if fn is None:
+                    fn = {}
+                    tool_call['function'] = fn
+                if fn.get('arguments') is None:
+                    fn['arguments'] = '{}'
+
+                valid_tool_calls.append(tool_call)
 
             has_content = bool(msg.get('content'))
 
