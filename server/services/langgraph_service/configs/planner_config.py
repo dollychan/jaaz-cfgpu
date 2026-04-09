@@ -27,6 +27,14 @@ class PlannerAgentConfig(BaseAgentConfig):
             - If the user specifies a quantity (e.g. "20 images"), include the exact number.
             - If the user's message contains <aspect_ratio> or <duration> tags, include them verbatim.
 
+            PRESERVE REFERENCE MATERIALS in every affected step:
+            - If the user's message contains file identifiers (e.g. im_xxxx.png, vi_xxxx.mp4),
+              asset:// URLs, or XML media tags (<input_images>, <input_videos>, <input_audios>),
+              copy them VERBATIM into the `description` field of EVERY step that will use those materials.
+            - Do NOT summarize, paraphrase, or rewrite any file identifier or asset URL.
+            - Example: if user says "Edit this image: im_abc123.png", every step description
+              that involves that image must include the exact text "im_abc123.png" unchanged.
+
             Example plan for "Generate an ad video for a lipstick product":
             [
               {"title": "Design the video script", "description": "Script for the lipstick ad"},
