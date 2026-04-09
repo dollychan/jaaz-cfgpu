@@ -14,6 +14,10 @@ class GenerateByCfgpuSeedance2_0InputSchema(BaseModel):
         default=5,
         description="Optional. The duration of the video in seconds. Default is 5."
     )
+    resolution: str = Field(
+        default="480p",
+        description="Optional. The resolution of the video. Allowed values: 480p, 720p, 1080p. Default is 480p."
+    )
     aspect_ratio: str = Field(
         default="16:9",
         description="Optional. The aspect ratio of the video. Allowed values: 16:9, 9:16, 1:1, 4:3, 3:4, 21:9"
@@ -56,6 +60,7 @@ async def generate_video_by_cfgpu_seedance_2_0(
     config: RunnableConfig,
     tool_call_id: Annotated[str, InjectedToolCallId],
     duration: int = 5,
+    resolution: str = "480p",
     aspect_ratio: str = "16:9",
     input_images: Optional[List[str]] = None,
     image_role: str = "auto",
@@ -69,7 +74,7 @@ async def generate_video_by_cfgpu_seedance_2_0(
 
     return await generate_video_with_provider(
         prompt=prompt,
-        resolution="480p",
+        resolution=resolution,
         duration=duration,
         aspect_ratio=aspect_ratio,
         model="wan-video",
