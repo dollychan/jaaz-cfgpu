@@ -283,6 +283,39 @@ def _fix_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return fixed_messages
 
 
+def _pre_model_hook(state: dict) -> dict:
+    """在每次 LLM 调用前修复 state 中的 tool_calls。
+
+    LangGraph 在 streaming 多轮对话中会累积新的 assistant 消息，
+    这些消息可能包含 LLM 产生的空 type 或空 arguments 的 tool_calls。
+    此 hook 在每轮调用前清理它们，避免 Qwen API 报错。
+    """
+    from langchain_core.messages import AIMessage
+    msgs = state.get('messages', [])
+    for msg in msgs:
+        if not isinstance(msg, AIMessage):
+            continue
+        if not getattr(msg, 'tool_calls', None):
+            continue
+        fixed: list[dict] = []
+        for tc in msg.tool_calls:
+            tc_type = tc.get('type', '')
+            fn = tc.get('function')
+            if not tc_type:
+                tc_type = 'function'
+                tc['type'] = 'function'
+            if not fn or not fn.get('name'):
+                continue
+            if fn.get('arguments') is None:
+                fn['arguments'] = '{}'
+            fixed.append(tc)
+        if fixed:
+            msg.tool_calls = fixed
+        else:
+            msg.tool_calls = []
+    return state
+
+
 def _expand_image_urls(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """将消息中的相对图片 URL 展开为可供外部模型 API 访问的绝对 URL。
 
@@ -718,6 +751,7 @@ and call write_plan directly.
         model=planner_lm,
         tools=planner_tools,
         prompt=planner_prompt,
+        pre_model_hook=_pre_model_hook,
     )
     return planner_agent, planner_prompt
 
@@ -733,6 +767,7 @@ def _build_creator_agent(
         model=orchestrator,
         tools=media_lc_tools,
         prompt=creator_prompt,
+        pre_model_hook=_pre_model_hook,
     )
 
 
