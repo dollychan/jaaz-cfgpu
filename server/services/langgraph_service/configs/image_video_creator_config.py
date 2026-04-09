@@ -63,44 +63,6 @@ Tell the user: "No image or video generation tools are available. Please select 
 Do NOT attempt to generate any media. Do NOT retry. Your task is to inform the user and stop.
 """
 
-        # Issue 4.1: describe available text tools so LLM knows when to call them
-        text_tools = [t for t in tool_list if t.get('type') == 'text']
-        if text_tools:
-            def _tool_fn_name(t: ToolInfoJson) -> str:
-                provider = t.get('provider', '')
-                safe_id = (
-                    (t.get('id') or '')
-                    .replace('/', '_').replace('-', '_')
-                    .replace('.', '_').replace(':', '_').replace(' ', '_')
-                )
-                return f"generate_text_with_{provider}_{safe_id}"
-
-            tool_lines = "\n".join(
-                f"  - {_tool_fn_name(t)} ({t.get('display_name') or t.get('id', '')})"
-                for t in text_tools
-            )
-            text_tools_prompt = f"""
-
-TEXT GENERATION TOOLS:
-You have access to the following text model tool(s):
-{tool_lines}
-
-Use them ONLY when the task requires:
-- Long-form creative writing (scripts, stories, product descriptions, articles)
-- Deep reasoning, analysis, or summarization
-- Translating or refining text before image/video generation
-
-You MAY call a text tool BEFORE generating images or videos when preparation text improves the result
-(e.g., write a detailed scene description first, then generate the image from that description).
-
-CRITICAL TEXT TOOL RULES:
-1. For simple conversational questions (greetings, "what model are you", "who are you", etc.) — answer DIRECTLY in plain text. Do NOT call any text tool.
-2. Call each text tool AT MOST ONCE per user request.
-3. After a text tool returns a result, output the result to the user and STOP immediately. Do NOT call any tool again (not text tools, not image tools, not video tools).
-"""
-        else:
-            text_tools_prompt = ""
-
         image_input_detection_prompt = f"""
 REFERENCE MEDIA RULE (applies only to the user's input message, not to tool results):
 When the user's message contains reference media in XML format, you MUST extract and pass all file_ids directly to tool parameters — do NOT analyze or describe the media content.
@@ -237,7 +199,6 @@ If any steps were skipped due to errors (see ERROR CLASSIFICATION RULES above):
             image_input_detection_prompt  # reference media rule first — highest priority
             + system_prompt
             + available_tools_prompt      # explicit image/video tool list to prevent hallucination
-            + text_tools_prompt           # Issue 4.1: text tools section (empty string if none)
             + batch_generation_prompt
             + error_handling_prompt
             + completion_prompt           # Task completion rules
