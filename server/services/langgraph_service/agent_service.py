@@ -309,6 +309,9 @@ def _pre_model_hook(state: dict) -> dict:
     这些消息可能包含 LLM 产生的空 name 或空 args 的 tool_calls。
     此 hook 在每轮调用前清理它们，避免 Qwen API 报错。
 
+    注意：只修复格式问题（空 args、错误的 type），不删除 tool_calls。
+    删除 tool_calls 会导致 LangGraph 状态损坏。
+
     同时兼容 LangChain 内部格式（name/args）和 OpenAI 格式（function.name）。
     """
     from langchain_core.messages import AIMessage
@@ -318,11 +321,8 @@ def _pre_model_hook(state: dict) -> dict:
             continue
         if not getattr(msg, 'tool_calls', None):
             continue
-        fixed: list[dict] = []
         for tc in msg.tool_calls:
-            name = _tc_name(tc)
-            if not name:
-                continue  # 无名称的幽灵 tool_call — 丢弃
+            # 修复格式问题，但不删除 tool_call
             _fix_tc_type(tc)
             # LangChain 格式：确保 args 不为 None
             if 'args' in tc and tc['args'] is None:
@@ -331,40 +331,7 @@ def _pre_model_hook(state: dict) -> dict:
             fn = tc.get('function')
             if fn is not None and fn.get('arguments') is None:
                 fn['arguments'] = '{}'
-            fixed.append(tc)
-        msg.tool_calls = fixed  # 空列表也 ok：保留"无 tool_call"语义
     return state
-
-
-def _create_post_model_hook(valid_tool_names: set[str]) -> callable:
-    """创建 post_model_hook，在 LLM 返回后过滤无效 tool_calls。
-
-    用于旧版本 langgraph-prebuilt（不支持 awrap_tool_call）。
-    """
-    def post_hook(state: dict) -> dict:
-        from langchain_core.messages import AIMessage
-        msgs = state.get('messages', [])
-        for msg in msgs:
-            if not isinstance(msg, AIMessage):
-                continue
-            if not getattr(msg, 'tool_calls', None):
-                continue
-            fixed: list[dict] = []
-            for tc in msg.tool_calls:
-                name = _tc_name(tc)
-                # 跳过空名称或未注册的工具
-                if not name or name not in valid_tool_names:
-                    continue
-                _fix_tc_type(tc)
-                if 'args' in tc and tc['args'] is None:
-                    tc['args'] = {}
-                fn = tc.get('function')
-                if fn is not None and fn.get('arguments') is None:
-                    fn['arguments'] = '{}'
-                fixed.append(tc)
-            msg.tool_calls = fixed
-        return state
-    return post_hook
 
 
 def _make_safe_tool_node(tools: list, **kwargs) -> tuple:
@@ -373,7 +340,12 @@ def _make_safe_tool_node(tools: list, **kwargs) -> tuple:
     Returns:
         tuple: (ToolNode, post_model_hook | None)
         - 如果 langgraph-prebuilt 支持 awrap_tool_call，返回 (ToolNode, None)
-        - 否则返回 (ToolNode, post_model_hook) 用于过滤无效 tool_calls
+        - 否则返回 (ToolNode, None) - 旧版本不使用 post_model_hook，避免状态损坏
+
+    注意：旧版本 langgraph-prebuilt 没有 awrap_tool_call 参数。
+    直接修改 AIMessage.tool_calls 会导致 "No AIMessage found in input" 错误。
+    因此旧版本只能依赖 ToolNode 的默认错误处理，让 planner prompt 中的 ERROR HANDLING
+    指导 LLM 在收到错误后如何恢复。
     """
     from langchain_core.tools import BaseTool
     from langchain_core.messages import ToolMessage
@@ -417,12 +389,13 @@ def _make_safe_tool_node(tools: list, **kwargs) -> tuple:
     # 检查 ToolNode 是否支持 awrap_tool_call 参数（langgraph-prebuilt 1.0+）
     tool_node_params = inspect.signature(ToolNode.__init__).parameters
     if 'awrap_tool_call' in tool_node_params:
-        # 新版本：使用 awrap_tool_call 拦截，不需要 post_model_hook
+        # 新版本：使用 awrap_tool_call 拦截无效 tool_calls
         return ToolNode(tools, awrap_tool_call=_awrap_tool_call, **kwargs), None
     else:
-        # 旧版本：返回 post_model_hook 用于过滤无效 tool_calls
-        post_hook = _create_post_model_hook(valid_tool_names)
-        return ToolNode(tools, **kwargs), post_hook
+        # 旧版本：不使用 post_model_hook（会导致状态损坏）
+        # 让 ToolNode 的默认错误处理机制处理无效 tool_calls
+        # planner prompt 中的 ERROR HANDLING 部分会指导 LLM 如何恢复
+        return ToolNode(tools, **kwargs), None
 
 
 def _post_model_hook(state: dict, tools: list) -> dict:
