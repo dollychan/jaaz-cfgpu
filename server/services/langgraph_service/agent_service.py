@@ -336,15 +336,47 @@ def _pre_model_hook(state: dict) -> dict:
     return state
 
 
-def _make_safe_tool_node(tools: list, **kwargs) -> ToolNode:
+def _create_post_model_hook(valid_tool_names: set[str]) -> callable:
+    """创建 post_model_hook，在 LLM 返回后过滤无效 tool_calls。
+
+    用于旧版本 langgraph-prebuilt（不支持 awrap_tool_call）。
+    """
+    def post_hook(state: dict) -> dict:
+        from langchain_core.messages import AIMessage
+        msgs = state.get('messages', [])
+        for msg in msgs:
+            if not isinstance(msg, AIMessage):
+                continue
+            if not getattr(msg, 'tool_calls', None):
+                continue
+            fixed: list[dict] = []
+            for tc in msg.tool_calls:
+                name = _tc_name(tc)
+                # 跳过空名称或未注册的工具
+                if not name or name not in valid_tool_names:
+                    continue
+                _fix_tc_type(tc)
+                if 'args' in tc and tc['args'] is None:
+                    tc['args'] = {}
+                fn = tc.get('function')
+                if fn is not None and fn.get('arguments') is None:
+                    fn['arguments'] = '{}'
+                fixed.append(tc)
+            msg.tool_calls = fixed
+        return state
+    return post_hook
+
+
+def _make_safe_tool_node(tools: list, **kwargs) -> tuple:
     """创建安全的 ToolNode，自动跳过无效的 tool_call（空名称、不存在的工具）。
 
-    通过 awrap_tool_call 在执行层拦截无效调用，返回 ToolMessage 错误信息，
-    而不是让 ToolNode 抛出异常中断整个 agent 循环。
-    相比 post_model_hook，此方法不会修改 AIMessage 对象，避免 LangGraph 状态损坏。
+    Returns:
+        tuple: (ToolNode, post_model_hook | None)
+        - 如果 langgraph-prebuilt 支持 awrap_tool_call，返回 (ToolNode, None)
+        - 否则返回 (ToolNode, post_model_hook) 用于过滤无效 tool_calls
     """
     from langchain_core.tools import BaseTool
-    from langchain_core.messages import ToolMessage, AIMessage
+    from langchain_core.messages import ToolMessage
     import inspect
 
     # 收集所有已注册的工具名称
@@ -385,39 +417,12 @@ def _make_safe_tool_node(tools: list, **kwargs) -> ToolNode:
     # 检查 ToolNode 是否支持 awrap_tool_call 参数（langgraph-prebuilt 1.0+）
     tool_node_params = inspect.signature(ToolNode.__init__).parameters
     if 'awrap_tool_call' in tool_node_params:
-        return ToolNode(tools, awrap_tool_call=_awrap_tool_call, **kwargs)
+        # 新版本：使用 awrap_tool_call 拦截，不需要 post_model_hook
+        return ToolNode(tools, awrap_tool_call=_awrap_tool_call, **kwargs), None
     else:
-        # 旧版本不支持 awrap_tool_call，使用 post_model_hook 过滤无效 tool_calls
-        # 注意：直接修改 msg.tool_calls 可能导致 LangGraph 状态损坏，
-        # 但旧版本没有 awrap_tool_call，这是唯一的方法
-        def _create_safe_tool_node_post_hook(valid_names: set[str]):
-            """创建 post_model_hook 来过滤无效 tool_calls。"""
-            def post_hook(state: dict) -> dict:
-                from langchain_core.messages import AIMessage
-                msgs = state.get('messages', [])
-                for msg in msgs:
-                    if not isinstance(msg, AIMessage):
-                        continue
-                    if not getattr(msg, 'tool_calls', None):
-                        continue
-                    fixed: list[dict] = []
-                    for tc in msg.tool_calls:
-                        name = _tc_name(tc)
-                        if not name or name not in valid_names:
-                            continue  # 丢弃无效 tool_call
-                        _fix_tc_type(tc)
-                        if 'args' in tc and tc['args'] is None:
-                            tc['args'] = {}
-                        fn = tc.get('function')
-                        if fn is not None and fn.get('arguments') is None:
-                            fn['arguments'] = '{}'
-                        fixed.append(tc)
-                    msg.tool_calls = fixed
-                return state
-            return post_hook
-
-        # 返回 ToolNode 和 post_hook 的元组，调用者需要使用 post_model_hook
-        return ToolNode(tools, **kwargs)
+        # 旧版本：返回 post_model_hook 用于过滤无效 tool_calls
+        post_hook = _create_post_model_hook(valid_tool_names)
+        return ToolNode(tools, **kwargs), post_hook
 
 
 def _post_model_hook(state: dict, tools: list) -> dict:
@@ -957,9 +962,9 @@ and call write_plan directly.
     else:
         planner_prompt = planner_base_prompt
 
-    # 使用安全的 ToolNode（自动跳过无效的 tool_call）替代 post_model_hook，
-    # 避免直接修改 AIMessage 导致 LangGraph 状态损坏
-    planner_tool_node = _make_safe_tool_node(planner_tools)
+    # 使用安全的 ToolNode（自动跳过无效的 tool_call）
+    # 返回 (ToolNode, post_model_hook | None)
+    planner_tool_node, planner_post_hook = _make_safe_tool_node(planner_tools)
 
     planner_agent = create_react_agent(
         name='planner',
@@ -967,6 +972,7 @@ and call write_plan directly.
         tools=planner_tool_node,
         prompt=planner_prompt,
         pre_model_hook=_pre_model_hook,
+        post_model_hook=planner_post_hook,
     )
     return planner_agent, planner_prompt
 
@@ -978,8 +984,8 @@ def _build_creator_agent(
 ) -> Any:
     """创建 Creator agent。"""
 
-    # 使用安全的 ToolNode（自动跳过无效的 tool_call）替代 post_model_hook
-    creator_tool_node = _make_safe_tool_node(media_lc_tools)
+    # 使用安全的 ToolNode（自动跳过无效的 tool_call）
+    creator_tool_node, creator_post_hook = _make_safe_tool_node(media_lc_tools)
 
     return create_react_agent(
         name='assistant',
@@ -987,6 +993,7 @@ def _build_creator_agent(
         tools=creator_tool_node,
         prompt=creator_prompt,
         pre_model_hook=_pre_model_hook,
+        post_model_hook=creator_post_hook,
     )
 
 
