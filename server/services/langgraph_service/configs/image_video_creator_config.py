@@ -19,7 +19,7 @@ PROMPT FIDELITY RULE (highest priority):
 
 1. If it is an image generation task, call generate_image tool immediately using the user’s original prompt. Choose aspect_ratio that best fits the content if the user did not specify.
 
-2. If it is a video generation task, call a video generation tool immediately using the user’s original prompt. You may generate a reference image first if needed, then pass it to the video tool.
+2. If it is a video generation task, call a video generation tool immediately using the user’s original prompt.
 
 3. CONTENT POLICY ERRORS: If a tool returns a message containing "Content policy violation" or "STOP. Do NOT retry", you MUST immediately stop all tool calls and inform the user in plain text. Do NOT retry with any other tool or any modified parameters. Your next action MUST be a plain text reply — never a tool call.
 """

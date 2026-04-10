@@ -906,10 +906,9 @@ def _build_planner_agent(
     # 动态注入 text tool 工作流说明
     planner_base_prompt = PlannerAgentConfig().system_prompt
     # 替换 prompt 中的工具名称为实际工具名称
-    planner_base_prompt = planner_base_prompt.replace(
-        'transfer_to_image_video_creator',
-        handoff_tool_name
-    )
+    # 支持多种旧名称格式，确保替换成功
+    for old_name in ['transfer_to_image_video_creator', 'transfer_to_creator']:
+        planner_base_prompt = planner_base_prompt.replace(old_name, handoff_tool_name)
     if text_lc_tools:
         tool_names = ', '.join(t.name for t in text_lc_tools)
         planner_prompt = planner_base_prompt.replace(
