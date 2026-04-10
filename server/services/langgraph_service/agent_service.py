@@ -283,12 +283,23 @@ def _fix_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return fixed_messages
 
 
+def _tc_name(tc: dict) -> str:
+    """从 LangChain 或 OpenAI 格式的 tool_call dict 中提取工具名。
+
+    LangChain 内部格式: {'name': '...', 'args': {...}, 'id': '...', 'type': 'tool_call'}
+    OpenAI API 格式:    {'function': {'name': '...', 'arguments': '...'}, 'id': '...', 'type': 'function'}
+    """
+    return tc.get('name') or (tc.get('function') or {}).get('name') or ''
+
+
 def _pre_model_hook(state: dict) -> dict:
-    """在每次 LLM 调用前修复 state 中的 tool_calls。
+    """在每次 LLM 调用前修复 state 中历史 AIMessage 的 tool_calls。
 
     LangGraph 在 streaming 多轮对话中会累积新的 assistant 消息，
-    这些消息可能包含 LLM 产生的空 type 或空 arguments 的 tool_calls。
+    这些消息可能包含 LLM 产生的空 name 或空 args 的 tool_calls。
     此 hook 在每轮调用前清理它们，避免 Qwen API 报错。
+
+    同时兼容 LangChain 内部格式（name/args）和 OpenAI 格式（function.name）。
     """
     from langchain_core.messages import AIMessage
     msgs = state.get('messages', [])
@@ -299,29 +310,31 @@ def _pre_model_hook(state: dict) -> dict:
             continue
         fixed: list[dict] = []
         for tc in msg.tool_calls:
-            tc_type = tc.get('type', '')
+            name = _tc_name(tc)
+            if not name:
+                continue  # 无名称的幽灵 tool_call — 丢弃
+            # 确保 type 字段存在
+            if not tc.get('type'):
+                tc['type'] = 'tool_call'
+            # LangChain 格式：确保 args 不为 None
+            if 'args' in tc and tc['args'] is None:
+                tc['args'] = {}
+            # OpenAI 格式：确保 arguments 不为 None
             fn = tc.get('function')
-            if not tc_type:
-                tc_type = 'function'
-                tc['type'] = 'function'
-            if not fn or not fn.get('name'):
-                continue
-            if fn.get('arguments') is None:
+            if fn is not None and fn.get('arguments') is None:
                 fn['arguments'] = '{}'
             fixed.append(tc)
-        if fixed:
-            msg.tool_calls = fixed
-        else:
-            msg.tool_calls = []
+        msg.tool_calls = fixed  # 空列表也 ok：保留"无 tool_call"语义
     return state
 
 
 def _post_model_hook(state: dict, tools: list) -> dict:
     """在 LLM 调用后、ToolNode 执行前过滤无效的 tool_calls。
 
-    当 LLM 生成合法的 handoff tool_call 与幽灵空 tool_call 时，
-    此 hook 会在 ToolNode 执行前剔除后者，避免
-    "Error: is not a valid tool" 导致整个 agent 循环中断。
+    当 LLM 生成合法 tool_call 与幽灵空 tool_call 时，此 hook 剔除后者，
+    避免 "Error: is not a valid tool" 导致整个 agent 循环中断。
+
+    同时兼容 LangChain 内部格式（name/args）和 OpenAI 格式（function.name）。
     """
     from langchain_core.messages import AIMessage
     msgs = state.get('messages', [])
@@ -332,14 +345,20 @@ def _post_model_hook(state: dict, tools: list) -> dict:
             valid: list[dict] = []
             valid_tool_names = {t.name for t in tools}
             for tc in msg.tool_calls:
-                fn = tc.get('function')
-                name = fn.get('name') if fn else ''
+                name = _tc_name(tc)
                 # 跳过空名称或未注册的工具调用
                 if not name or name not in valid_tool_names:
+                    print(f"⚠️ _post_model_hook: 过滤无效 tool_call name={repr(name)}, valid={valid_tool_names}")
                     continue
+                # 确保 type 字段存在
                 if not tc.get('type'):
-                    tc['type'] = 'function'
-                if fn and fn.get('arguments') is None:
+                    tc['type'] = 'tool_call'
+                # LangChain 格式：确保 args 不为 None
+                if 'args' in tc and tc['args'] is None:
+                    tc['args'] = {}
+                # OpenAI 格式：确保 arguments 不为 None
+                fn = tc.get('function')
+                if fn is not None and fn.get('arguments') is None:
                     fn['arguments'] = '{}'
                 valid.append(tc)
             msg.tool_calls = valid if valid else []
