@@ -81,6 +81,7 @@ You MUST:
 3. Do NOT analyze or describe the reference images — just pass the file_ids directly.
 {multi_image_rule}
 5. For video generation → pass input_images to the video tool as well.
+6. Don't set image_role to "first_frame" or "first_last_frame" unless the user explicitly specifies that role — when in doubt, use "reference_image" for all input images to avoid generation errors.
 
 CRITICAL: ALWAYS pass the file_id directly to the tool's input_images parameter. The system automatically converts file_ids to the correct format. Never ask the user to provide a public URL - just call the tool with the file_id as-is.
 
