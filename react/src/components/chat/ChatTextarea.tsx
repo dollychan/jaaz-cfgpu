@@ -853,7 +853,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-32">
-              {['auto', '1:1', '4:3', '3:4', '16:9', '9:16'].map((ratio) => (
+              {['auto', '1:1', '4:3', '3:4', '16:9', '9:16', '21:9'].map((ratio) => (
                 <DropdownMenuItem
                   key={ratio}
                   onClick={() => {

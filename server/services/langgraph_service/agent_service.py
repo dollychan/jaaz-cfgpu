@@ -316,6 +316,36 @@ def _pre_model_hook(state: dict) -> dict:
     return state
 
 
+def _post_model_hook(state: dict, tools: list) -> dict:
+    """在 LLM 调用后、ToolNode 执行前过滤无效的 tool_calls。
+
+    当 LLM 生成合法的 handoff tool_call 与幽灵空 tool_call 时，
+    此 hook 会在 ToolNode 执行前剔除后者，避免
+    "Error: is not a valid tool" 导致整个 agent 循环中断。
+    """
+    from langchain_core.messages import AIMessage
+    msgs = state.get('messages', [])
+    # 只看最后一条消息（最新的 LLM 响应）
+    if msgs and isinstance(msgs[-1], AIMessage):
+        msg = msgs[-1]
+        if getattr(msg, 'tool_calls', None):
+            valid: list[dict] = []
+            valid_tool_names = {t.name for t in tools}
+            for tc in msg.tool_calls:
+                fn = tc.get('function')
+                name = fn.get('name') if fn else ''
+                # 跳过空名称或未注册的工具调用
+                if not name or name not in valid_tool_names:
+                    continue
+                if not tc.get('type'):
+                    tc['type'] = 'function'
+                if fn and fn.get('arguments') is None:
+                    fn['arguments'] = '{}'
+                valid.append(tc)
+            msg.tool_calls = valid if valid else []
+    return state
+
+
 def _parse_input_media_from_messages(messages: List[Dict[str, Any]]) -> Dict[str, List[str]]:
     """从最后一条用户消息中解析所有媒体引用，返回按顺序排列的有序列表。
 
@@ -834,12 +864,17 @@ and call write_plan directly.
     else:
         planner_prompt = planner_base_prompt
 
+    # post_model_hook needs access to tools list — use a closure
+    def _planner_post_model_hook(state: dict) -> dict:
+        return _post_model_hook(state, planner_tools)
+
     planner_agent = create_react_agent(
         name='planner',
         model=planner_lm,
         tools=planner_tools,
         prompt=planner_prompt,
         pre_model_hook=_pre_model_hook,
+        post_model_hook=_planner_post_model_hook,
     )
     return planner_agent, planner_prompt
 
@@ -850,12 +885,17 @@ def _build_creator_agent(
     creator_prompt: str,
 ) -> Any:
     """创建 Creator agent。"""
+
+    def _creator_post_model_hook(state: dict) -> dict:
+        return _post_model_hook(state, media_lc_tools)
+
     return create_react_agent(
         name='assistant',
         model=orchestrator,
         tools=media_lc_tools,
         prompt=creator_prompt,
         pre_model_hook=_pre_model_hook,
+        post_model_hook=_creator_post_model_hook,
     )
 
 

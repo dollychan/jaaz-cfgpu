@@ -16,7 +16,7 @@ class GenerateByCfgpuSeedance2_0InputSchema(BaseModel):
     )
     resolution: str = Field(
         default="480p",
-        description="Optional. The resolution of the video. Allowed values: 480p, 720p, 1080p. Default is 480p."
+        description="Optional. The resolution of the video. Allowed values: 480p, 720p. Default is 480p."
     )
     aspect_ratio: str = Field(
         default="16:9",
