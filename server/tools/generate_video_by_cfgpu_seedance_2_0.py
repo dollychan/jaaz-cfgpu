@@ -30,10 +30,9 @@ class GenerateByCfgpuSeedance2_0InputSchema(BaseModel):
         default="auto",
         description=(
             "Optional. How input images are used. Ignored when input_images is not set. "
-          #  "'auto' (default): infer from count — 1 image → first_frame, 2 images → first_last_frame, 3–9 images → reference_image; "
-            "automatically switches to reference_image when input_videos or input_audios are also provided. "
-            "'first_frame': when user demands the image to be the starting frame (image-to-video, no input_videos/input_audios allowed). "
-            "'first_last_frame': when user demands 2 images as the starting and ending frames (no input_videos/input_audios allowed). "
+            "'auto' (default): use images as reference_image (style/content reference). "
+            "'first_frame': when user explicitly demands the image to be the starting frame (image-to-video, no input_videos/input_audios allowed). "
+            "'first_last_frame': when user explicitly demands 2 images as the starting and ending frames (no input_videos/input_audios allowed). "
             "'reference_image': use 1–9 images as style/content references; compatible with input_videos and input_audios (multimodal)."
         )
     )
