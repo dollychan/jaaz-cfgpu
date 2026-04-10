@@ -286,10 +286,20 @@ def _fix_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 def _tc_name(tc: dict) -> str:
     """从 LangChain 或 OpenAI 格式的 tool_call dict 中提取工具名。
 
-    LangChain 内部格式: {'name': '...', 'args': {...}, 'id': '...', 'type': 'tool_call'}
+    LangChain 内部格式: {'name': '...', 'args': {...}, 'id': '...', 'type': 'function'}
     OpenAI API 格式:    {'function': {'name': '...', 'arguments': '...'}, 'id': '...', 'type': 'function'}
     """
     return tc.get('name') or (tc.get('function') or {}).get('name') or ''
+
+
+def _fix_tc_type(tc: dict) -> None:
+    """确保 tool_call 的 type 字段为 'function'（OpenAI 格式要求）。
+
+    LangChain 内部可能用 'tool_call'，但 OpenAI API 的 Pydantic 模型
+    要求 type 必须是 'function'，否则序列化会报 PydanticSerializationUnexpectedValue。
+    """
+    if not tc.get('type') or tc.get('type') != 'function':
+        tc['type'] = 'function'
 
 
 def _pre_model_hook(state: dict) -> dict:
@@ -313,9 +323,7 @@ def _pre_model_hook(state: dict) -> dict:
             name = _tc_name(tc)
             if not name:
                 continue  # 无名称的幽灵 tool_call — 丢弃
-            # 确保 type 字段存在
-            if not tc.get('type'):
-                tc['type'] = 'tool_call'
+            _fix_tc_type(tc)
             # LangChain 格式：确保 args 不为 None
             if 'args' in tc and tc['args'] is None:
                 tc['args'] = {}
@@ -334,7 +342,7 @@ def _post_model_hook(state: dict, tools: list) -> dict:
     当 LLM 生成合法 tool_call 与幽灵空 tool_call 时，此 hook 剔除后者，
     避免 "Error: is not a valid tool" 导致整个 agent 循环中断。
 
-    同时兼容 LangChain 内部格式（name/args）和 OpenAI 格式（function.name）。
+    同时修复 type 字段为 'function'，避免 OpenAI 序列化报错。
     """
     from langchain_core.messages import AIMessage
     msgs = state.get('messages', [])
@@ -350,9 +358,7 @@ def _post_model_hook(state: dict, tools: list) -> dict:
                 if not name or name not in valid_tool_names:
                     print(f"⚠️ _post_model_hook: 过滤无效 tool_call name={repr(name)}, valid={valid_tool_names}")
                     continue
-                # 确保 type 字段存在
-                if not tc.get('type'):
-                    tc['type'] = 'tool_call'
+                _fix_tc_type(tc)
                 # LangChain 格式：确保 args 不为 None
                 if 'args' in tc and tc['args'] is None:
                     tc['args'] = {}
