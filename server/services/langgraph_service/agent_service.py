@@ -8,7 +8,7 @@ import json
 import os
 from utils.http_client import HttpClient
 from langgraph_swarm import create_swarm  # type: ignore
-from langgraph.prebuilt import create_react_agent  # type: ignore
+from langgraph.prebuilt import create_react_agent, ToolNode  # type: ignore
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, BaseMessage
@@ -336,38 +336,52 @@ def _pre_model_hook(state: dict) -> dict:
     return state
 
 
-def _post_model_hook(state: dict, tools: list) -> dict:
-    """在 LLM 调用后、ToolNode 执行前过滤无效的 tool_calls。
+def _make_safe_tool_node(tools: list, **kwargs) -> ToolNode:
+    """创建安全的 ToolNode，自动跳过无效的 tool_call（空名称、不存在的工具）。
 
-    当 LLM 生成合法 tool_call 与幽灵空 tool_call 时，此 hook 剔除后者，
-    避免 "Error: is not a valid tool" 导致整个 agent 循环中断。
-
-    同时修复 type 字段为 'function'，避免 OpenAI 序列化报错。
+    通过 awrap_tool_call 在执行层拦截无效调用，返回 ToolMessage 错误信息，
+    而不是让 ToolNode 抛出异常中断整个 agent 循环。
+    相比 post_model_hook，此方法不会修改 AIMessage 对象，避免 LangGraph 状态损坏。
     """
-    from langchain_core.messages import AIMessage
-    msgs = state.get('messages', [])
-    # 只看最后一条消息（最新的 LLM 响应）
-    if msgs and isinstance(msgs[-1], AIMessage):
-        msg = msgs[-1]
-        if getattr(msg, 'tool_calls', None):
-            valid: list[dict] = []
-            valid_tool_names = {t.name for t in tools}
-            for tc in msg.tool_calls:
-                name = _tc_name(tc)
-                # 跳过空名称或未注册的工具调用
-                if not name or name not in valid_tool_names:
-                    print(f"⚠️ _post_model_hook: 过滤无效 tool_call name={repr(name)}, valid={valid_tool_names}")
-                    continue
-                _fix_tc_type(tc)
-                # LangChain 格式：确保 args 不为 None
-                if 'args' in tc and tc['args'] is None:
-                    tc['args'] = {}
-                # OpenAI 格式：确保 arguments 不为 None
-                fn = tc.get('function')
-                if fn is not None and fn.get('arguments') is None:
-                    fn['arguments'] = '{}'
-                valid.append(tc)
-            msg.tool_calls = valid if valid else []
+    from langchain_core.tools import BaseTool
+    from langchain_core.messages import ToolMessage
+
+    # 收集所有已注册的工具名称
+    valid_tool_names: set[str] = set()
+    for t in tools:
+        if isinstance(t, BaseTool):
+            valid_tool_names.add(t.name)
+        elif hasattr(t, 'name'):
+            valid_tool_names.add(t.name)
+
+    async def _awrap_tool_call(tool_call: dict, execute):
+        name = _tc_name(tool_call)
+        # 跳过空名称的工具调用
+        if not name:
+            return ToolMessage(
+                content='<skipped> Empty tool_call ignored',
+                tool_call_id=tool_call.get('id', 'unknown'),
+                name='skipped',
+            )
+        # 跳过未注册的工具调用（如幽灵空 tool_call 残留的名称）
+        if name not in valid_tool_names:
+            return ToolMessage(
+                content=f'<skipped> Tool "{name}" is not registered, ignored',
+                tool_call_id=tool_call.get('id', 'unknown'),
+                name='skipped',
+            )
+        return await execute(tool_call)
+
+    return ToolNode(tools, awrap_tool_call=_awrap_tool_call, **kwargs)
+
+
+def _post_model_hook(state: dict, tools: list) -> dict:
+    """【已弃用】不再使用 post_model_hook 过滤 tool_calls。
+
+    直接修改 msg.tool_calls 会破坏 LangGraph 内部状态对象，
+    导致 ToolNode._parse_input 找不到 AIMessage（No AIMessage found in input）。
+    改为在 ToolNode 层用 awrap_tool_call 处理无效调用。
+    """
     return state
 
 
@@ -889,17 +903,16 @@ and call write_plan directly.
     else:
         planner_prompt = planner_base_prompt
 
-    # post_model_hook needs access to tools list — use a closure
-    def _planner_post_model_hook(state: dict) -> dict:
-        return _post_model_hook(state, planner_tools)
+    # 使用安全的 ToolNode（自动跳过无效的 tool_call）替代 post_model_hook，
+    # 避免直接修改 AIMessage 导致 LangGraph 状态损坏
+    planner_tool_node = _make_safe_tool_node(planner_tools)
 
     planner_agent = create_react_agent(
         name='planner',
         model=planner_lm,
-        tools=planner_tools,
+        tools=planner_tool_node,
         prompt=planner_prompt,
         pre_model_hook=_pre_model_hook,
-        post_model_hook=_planner_post_model_hook,
     )
     return planner_agent, planner_prompt
 
@@ -911,16 +924,15 @@ def _build_creator_agent(
 ) -> Any:
     """创建 Creator agent。"""
 
-    def _creator_post_model_hook(state: dict) -> dict:
-        return _post_model_hook(state, media_lc_tools)
+    # 使用安全的 ToolNode（自动跳过无效的 tool_call）替代 post_model_hook
+    creator_tool_node = _make_safe_tool_node(media_lc_tools)
 
     return create_react_agent(
         name='assistant',
         model=orchestrator,
-        tools=media_lc_tools,
+        tools=creator_tool_node,
         prompt=creator_prompt,
         pre_model_hook=_pre_model_hook,
-        post_model_hook=_creator_post_model_hook,
     )
 
 
