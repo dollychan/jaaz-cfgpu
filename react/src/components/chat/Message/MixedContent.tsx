@@ -31,7 +31,7 @@ export const MixedContentImages: React.FC<MixedContentImagesProps> = ({ contents
         </div>
       ) : (
         // 多张图片：横向排布，第一张图靠右
-        <div className="flex gap-2 max-h-[512px] justify-end flex-row-reverse">
+        <div className="flex gap-2 max-h-[512px] justify-end">
           {images.map((image, index) => (
             <div key={index} className="max-h-[512px]">
               <MessageImage content={image} />

@@ -464,15 +464,30 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       }
       setMessages((prev) => {
         // Build stable lookup: first tool_call id of each assistant message → __uid
+        // AND collect tool_calls per assistant message by positional index
         const uidByToolCallId = new Map<string, string>()
-        for (const m of prev) {
+        const prevAssistantToolCalls: Array<{ idx: number; toolCalls: any[] }>[] = []
+        for (let i = 0; i < prev.length; i++) {
+          const m = prev[i]
           if (m.role === 'assistant' && (m as any).tool_calls?.length && (m as MessageWithUid).__uid) {
             const firstId = (m as any).tool_calls[0].id as string
             uidByToolCallId.set(firstId, (m as MessageWithUid).__uid!)
           }
+          if (m.role === 'assistant' && (m as any).tool_calls?.length) {
+            prevAssistantToolCalls.push({ idx: i, toolCalls: (m as any).tool_calls })
+          }
         }
 
         const merged = mergeToolCallResult(data.messages)
+
+        // Build mapping: which server assistant messages already have tool_calls
+        const mergedAssistantIndices: number[] = []
+        for (let i = 0; i < merged.length; i++) {
+          if (merged[i].role === 'assistant') {
+            mergedAssistantIndices.push(i)
+          }
+        }
+
         return merged.map((msg, idx) => {
           // Prefer match by tool_call_id — unaffected by concurrent appends
           let existingUid: string | undefined
@@ -481,6 +496,23 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
           }
           // Fall back to positional match for regular messages
           existingUid = existingUid ?? (prev[idx] as MessageWithUid)?.__uid ?? (msg as MessageWithUid).__uid
+
+          // If server data lost tool_calls (LangGraph strips them after resolution),
+          // restore them from frontend state by matching assistant-message position.
+          if (msg.role === 'assistant' && !(msg as any).tool_calls?.length) {
+            const assistantPos = mergedAssistantIndices.indexOf(idx)
+            if (assistantPos >= 0 && assistantPos < prevAssistantToolCalls.length) {
+              const prevToolCalls = prevAssistantToolCalls[assistantPos]?.toolCalls
+              if (prevToolCalls?.length) {
+                // Only restore if this assistant message has no content (it was a pure tool_call message)
+                const hasContent = typeof msg.content === 'string' && msg.content.trim().length > 0
+                if (!hasContent) {
+                  ; (msg as any).tool_calls = prevToolCalls
+                }
+              }
+            }
+          }
+
           return { ...msg, __uid: existingUid }
         })
       })
