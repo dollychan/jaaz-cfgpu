@@ -110,7 +110,7 @@ async def generate_video_with_provider(
         prompt: Video generation prompt
         resolution: Video resolution (480p, 1080p)
         duration: Video duration in seconds (5, 10)
-        aspect_ratio: Video aspect ratio (1:1, 16:9, 4:3, 21:9)
+        aspect_ratio: Video aspect ratio (1:1, 16:9, 9:16, 4:3, 21:9)
         model: Model identifier (e.g., 'doubao-seedance-1-0-pro')
         tool_call_id: Tool call ID
         config: Context runtime configuration containing canvas_id, session_id, model_info, injected by langgraph
