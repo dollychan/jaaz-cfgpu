@@ -316,6 +316,94 @@ def _pre_model_hook(state: dict) -> dict:
     return state
 
 
+def _parse_input_media_from_messages(messages: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+    """从最后一条用户消息中解析所有媒体引用，返回按顺序排列的有序列表。
+
+    支持以下格式（按前端实际发送的格式）：
+    1. <input_images><image file_id="im_xxx"/></input_images> XML 标签
+    2. <input_videos><video file_id="vi_xxx"/></input_videos> XML 标签
+    3. <input_audios><audio file_id="au_xxx"/></input_audios> XML 标签
+    4. asset:// URL 嵌入的 JSON 结构（image_url / video_url / audio_url type）
+    5. 裸文件 ID（im_xxxx.png / vi_xxxx.mp4）出现在 prompt 文本中
+
+    解析顺序即前端插入顺序，不做任何重排。
+    """
+    import re
+
+    # 找最后一条 user 消息
+    last_user = next(
+        (m for m in reversed(messages) if m.get('role') == 'user'),
+        None,
+    )
+    if not last_user:
+        return {}
+
+    # 提取纯文本
+    content = last_user.get('content', '')
+    if isinstance(content, list):
+        text = ' '.join(
+            item.get('text', '') for item in content
+            if isinstance(item, dict) and item.get('type') == 'text'
+        )
+    else:
+        text = str(content)
+
+    result: Dict[str, List[str]] = {}
+
+    # 1. XML 标签格式（file_id 属性，保留出现顺序）
+    for media_type, xml_tag in [
+        ('input_images', 'image'),
+        ('input_videos', 'video'),
+        ('input_audios', 'audio'),
+    ]:
+        ids = re.findall(
+            rf'<{xml_tag}[^>]+file_id=["\']([^"\']+)["\']',
+            text,
+        )
+        if ids:
+            result[media_type] = ids
+
+    # 2. asset:// URL JSON 结构（type 字段决定桶）
+    asset_type_map = {'image_url': 'input_images', 'video_url': 'input_videos', 'audio_url': 'input_audios'}
+    for json_type, bucket in asset_type_map.items():
+        assets = re.findall(
+            rf'"type":\s*"{re.escape(json_type)}"[^{{}}]*?"url":\s*"(asset://[^"]+)"',
+            text,
+        )
+        if assets:
+            result.setdefault(bucket, []).extend(assets)
+
+    # 3. 裸文件 ID（im_ / vi_ / au_ 前缀，补充 XML 未覆盖的情况）
+    if 'input_images' not in result:
+        bare_images = re.findall(r'\bim_[A-Za-z0-9_.-]+', text)
+        if bare_images:
+            result['input_images'] = bare_images
+    if 'input_videos' not in result:
+        bare_videos = re.findall(r'\bvi_[A-Za-z0-9_.-]+', text)
+        if bare_videos:
+            result['input_videos'] = bare_videos
+
+    return result
+
+
+def _format_media_manifest(media: Dict[str, List[str]]) -> str:
+    """将预解析的媒体引用格式化为注入 LLM prompt 的清单文本。"""
+    if not media:
+        return ''
+    lines = ['INPUT MEDIA MANIFEST (server-parsed — authoritative order):']
+    for bucket, ids in media.items():
+        for i, fid in enumerate(ids):
+            lines.append(f'  {bucket}[{i}]: {fid}')
+        lines.append(f'  → full list: {ids}')
+    lines += [
+        'CRITICAL RULES:',
+        '  1. Pass the FULL list above as the corresponding parameter (input_images / input_videos / input_audios).',
+        '  2. Do NOT reorder, drop, or add extra IDs.',
+        '  3. If a step only needs a subset, slice by index (e.g. input_images[0]) but preserve relative order.',
+    ]
+    return '\n'.join(lines)
+
+
 def _expand_image_urls(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """将消息中的相对图片 URL 展开为可供外部模型 API 访问的绝对 URL。
 
@@ -866,6 +954,11 @@ async def langgraph_multi_agent(
 
         # 4. 构建 Creator prompt
         creator_prompt = _build_creator_prompt(tool_list, system_prompt)
+
+        # 4b. 注入媒体清单（server 端解析，保证图片/视频顺序权威）
+        input_media = _parse_input_media_from_messages(fixed_messages)
+        if input_media:
+            creator_prompt = creator_prompt + "\n\n" + _format_media_manifest(input_media)
 
         # 5. 决定是否使用 planner-creator 双 agent 模式
         # 只要前端传了 text tools，就用 planner；否则单 agent
