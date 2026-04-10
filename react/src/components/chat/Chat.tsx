@@ -415,6 +415,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             })
           })
         )
+        // Mark this tool result as merged so it is hidden (shown inside the green box)
+        // even if handleAllMessages fires before mergeToolCallResult has a chance to run.
+        if (!mergedToolCallIds.current.includes(data.id)) {
+          mergedToolCallIds.current.push(data.id)
+        }
       }
     },
     [canvasId, sessionId]
@@ -497,19 +502,41 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
           // Fall back to positional match for regular messages
           existingUid = existingUid ?? (prev[idx] as MessageWithUid)?.__uid ?? (msg as MessageWithUid).__uid
 
-          // If server data lost tool_calls (LangGraph strips them after resolution),
-          // restore them from frontend state by matching assistant-message position.
-          if (msg.role === 'assistant' && !(msg as any).tool_calls?.length) {
-            const assistantPos = mergedAssistantIndices.indexOf(idx)
-            if (assistantPos >= 0 && assistantPos < prevAssistantToolCalls.length) {
-              const prevToolCalls = prevAssistantToolCalls[assistantPos]?.toolCalls
-              if (prevToolCalls?.length) {
-                // Only restore if this assistant message has no content (it was a pure tool_call message)
-                const hasContent = typeof msg.content === 'string' && msg.content.trim().length > 0
-                if (!hasContent) {
+          if (msg.role === 'assistant') {
+            // Find the matching prev message by __uid (reliable) to preserve/restore tool_calls
+            const prevMsg = existingUid
+              ? (prev.find(m => (m as MessageWithUid).__uid === existingUid) as any)
+              : null
+
+            if (!(msg as any).tool_calls?.length) {
+              // LangGraph stripped tool_calls after resolution — restore from prev using __uid match.
+              // Falls back to positional match only if __uid lookup fails (e.g. brand-new message).
+              const hasContent = typeof msg.content === 'string' && msg.content.trim().length > 0
+              if (!hasContent) {
+                const prevToolCalls = prevMsg?.tool_calls?.length
+                  ? prevMsg.tool_calls
+                  : (() => {
+                      // positional fallback (legacy — kept for non-uid messages)
+                      const assistantPos = mergedAssistantIndices.indexOf(idx)
+                      return (assistantPos >= 0 && assistantPos < prevAssistantToolCalls.length)
+                        ? prevAssistantToolCalls[assistantPos]?.toolCalls
+                        : undefined
+                    })()
+                if (prevToolCalls?.length) {
                   ; (msg as any).tool_calls = prevToolCalls
                 }
               }
+            } else if (prevMsg?.tool_calls?.length) {
+              // tool_calls present in server data but mergeToolCallResult may not have set
+              // toolCall.result yet (tool ran but values chunk arrived before tool_call_result event,
+              // or LangGraph didn't include the tool result message in this values chunk).
+              // Preserve any results already set in prev so the green box keeps showing them.
+              ;(msg as any).tool_calls.forEach((tc: any) => {
+                if (!tc.result) {
+                  const prevTc = prevMsg.tool_calls.find((pt: any) => pt.id === tc.id)
+                  if (prevTc?.result) tc.result = prevTc.result
+                }
+              })
             }
           }
 
