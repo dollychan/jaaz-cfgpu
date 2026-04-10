@@ -85,6 +85,8 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
             # When other media is present we must use reference_image (multimodal mode).
             has_other_media = bool(input_video_data or input_audio_data)
 
+            """ 
+            no auto fist_(last_)_frame
             if image_role == "auto":
                 if has_other_media or n >= 3:
                     effective_role = "reference_image"
@@ -92,7 +94,8 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
                     effective_role = "first_frame"
                 else:  # n == 2
                     effective_role = "first_last_frame"
-            elif image_role in ("first_frame", "first_last_frame") and has_other_media:
+            elif"""
+            if image_role in ("first_frame", "first_last_frame") and has_other_media:
                 # Caller explicitly chose a frame role but also supplied other media —
                 # override to reference_image to avoid an API InvalidParameter error.
                 print(
