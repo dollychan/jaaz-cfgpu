@@ -345,6 +345,7 @@ def _make_safe_tool_node(tools: list, **kwargs) -> ToolNode:
     """
     from langchain_core.tools import BaseTool
     from langchain_core.messages import ToolMessage
+    import inspect
 
     # 收集所有已注册的工具名称
     valid_tool_names: set[str] = set()
@@ -372,7 +373,14 @@ def _make_safe_tool_node(tools: list, **kwargs) -> ToolNode:
             )
         return await execute(tool_call)
 
-    return ToolNode(tools, awrap_tool_call=_awrap_tool_call, **kwargs)
+    # 检查 ToolNode 是否支持 awrap_tool_call 参数（langgraph-prebuilt 1.0+）
+    tool_node_params = inspect.signature(ToolNode.__init__).parameters
+    if 'awrap_tool_call' in tool_node_params:
+        return ToolNode(tools, awrap_tool_call=_awrap_tool_call, **kwargs)
+    else:
+        # 旧版本不支持 awrap_tool_call，直接返回 ToolNode
+        # 无效 tool_call 将由 ToolNode 的默认错误处理机制处理
+        return ToolNode(tools, **kwargs)
 
 
 def _post_model_hook(state: dict, tools: list) -> dict:
