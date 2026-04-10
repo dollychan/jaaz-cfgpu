@@ -280,20 +280,12 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
       return
     }
 
-    // Add aspect ratio, quantity, duration and resolution information if not default values
+    // Always include all parameters to avoid interference from previous messages
     let additionalInfo = ''
-    if (selectedAspectRatio !== 'auto') {
-      additionalInfo += `<aspect_ratio>${selectedAspectRatio}</aspect_ratio>\n`
-    }
-    if (quantity !== 1) {
-      additionalInfo += `<quantity>${quantity}</quantity>\n`
-    }
-    if (duration !== 5) {
-      additionalInfo += `<duration>${duration}</duration>\n`
-    }
-    if (resolution !== '480p') {
-      additionalInfo += `<resolution>${resolution}</resolution>\n`
-    }
+    additionalInfo += `<aspect_ratio>${selectedAspectRatio}</aspect_ratio>\n`
+    additionalInfo += `<quantity>${quantity}</quantity>\n`
+    additionalInfo += `<duration>${duration}</duration>\n`
+    additionalInfo += `<resolution>${resolution}</resolution>\n`
 
     if (additionalInfo) {
       text_content = text_content + '\n\n' + additionalInfo
