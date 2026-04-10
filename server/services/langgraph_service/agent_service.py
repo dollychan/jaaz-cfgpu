@@ -344,7 +344,7 @@ def _make_safe_tool_node(tools: list, **kwargs) -> ToolNode:
     相比 post_model_hook，此方法不会修改 AIMessage 对象，避免 LangGraph 状态损坏。
     """
     from langchain_core.tools import BaseTool
-    from langchain_core.messages import ToolMessage
+    from langchain_core.messages import ToolMessage, AIMessage
     import inspect
 
     # 收集所有已注册的工具名称
@@ -355,31 +355,68 @@ def _make_safe_tool_node(tools: list, **kwargs) -> ToolNode:
         elif hasattr(t, 'name'):
             valid_tool_names.add(t.name)
 
-    async def _awrap_tool_call(tool_call: dict, execute):
+    async def _awrap_tool_call(request, execute):
+        """awrap_tool_call wrapper that receives ToolCallRequest (dataclass).
+
+        Args:
+            request: ToolCallRequest with fields: tool_call (dict), tool (BaseTool|None), state, runtime
+            execute: Async callable to execute the tool
+        """
+        tool_call = request.tool_call
         name = _tc_name(tool_call)
+        tool_call_id = tool_call.get('id', 'unknown')
+
         # 跳过空名称的工具调用
         if not name:
             return ToolMessage(
                 content='<skipped> Empty tool_call ignored',
-                tool_call_id=tool_call.get('id', 'unknown'),
+                tool_call_id=tool_call_id,
                 name='skipped',
             )
         # 跳过未注册的工具调用（如幽灵空 tool_call 残留的名称）
         if name not in valid_tool_names:
             return ToolMessage(
                 content=f'<skipped> Tool "{name}" is not registered, ignored',
-                tool_call_id=tool_call.get('id', 'unknown'),
+                tool_call_id=tool_call_id,
                 name='skipped',
             )
-        return await execute(tool_call)
+        return await execute(request)
 
     # 检查 ToolNode 是否支持 awrap_tool_call 参数（langgraph-prebuilt 1.0+）
     tool_node_params = inspect.signature(ToolNode.__init__).parameters
     if 'awrap_tool_call' in tool_node_params:
         return ToolNode(tools, awrap_tool_call=_awrap_tool_call, **kwargs)
     else:
-        # 旧版本不支持 awrap_tool_call，直接返回 ToolNode
-        # 无效 tool_call 将由 ToolNode 的默认错误处理机制处理
+        # 旧版本不支持 awrap_tool_call，使用 post_model_hook 过滤无效 tool_calls
+        # 注意：直接修改 msg.tool_calls 可能导致 LangGraph 状态损坏，
+        # 但旧版本没有 awrap_tool_call，这是唯一的方法
+        def _create_safe_tool_node_post_hook(valid_names: set[str]):
+            """创建 post_model_hook 来过滤无效 tool_calls。"""
+            def post_hook(state: dict) -> dict:
+                from langchain_core.messages import AIMessage
+                msgs = state.get('messages', [])
+                for msg in msgs:
+                    if not isinstance(msg, AIMessage):
+                        continue
+                    if not getattr(msg, 'tool_calls', None):
+                        continue
+                    fixed: list[dict] = []
+                    for tc in msg.tool_calls:
+                        name = _tc_name(tc)
+                        if not name or name not in valid_names:
+                            continue  # 丢弃无效 tool_call
+                        _fix_tc_type(tc)
+                        if 'args' in tc and tc['args'] is None:
+                            tc['args'] = {}
+                        fn = tc.get('function')
+                        if fn is not None and fn.get('arguments') is None:
+                            fn['arguments'] = '{}'
+                        fixed.append(tc)
+                    msg.tool_calls = fixed
+                return state
+            return post_hook
+
+        # 返回 ToolNode 和 post_hook 的元组，调用者需要使用 post_model_hook
         return ToolNode(tools, **kwargs)
 
 
@@ -878,19 +915,28 @@ def _build_planner_agent(
     }
     planner_lm = _create_text_model(planner_model_info)
     write_plan_lc = tool_service.get_tool('write_plan')
+    # 注意：agent_name 必须与 create_react_agent 中的 name 参数一致
+    # 工具名称会自动生成为 transfer_to_<agent_name>
     handoff_to_creator = create_handoff_tool(
         agent_name='assistant',
         description='Transfer to the image/video creator agent to execute the plan.',
     )
+    # 更新 prompt 中的工具名称以匹配实际工具
+    handoff_tool_name = handoff_to_creator.name  # 实际工具名称: transfer_to_assistant
     planner_tools = [t for t in [write_plan_lc, handoff_to_creator] + text_lc_tools if t is not None]
 
     # 动态注入 text tool 工作流说明
     planner_base_prompt = PlannerAgentConfig().system_prompt
+    # 替换 prompt 中的工具名称为实际工具名称
+    planner_base_prompt = planner_base_prompt.replace(
+        'transfer_to_image_video_creator',
+        handoff_tool_name
+    )
     if text_lc_tools:
         tool_names = ', '.join(t.name for t in text_lc_tools)
         planner_prompt = planner_base_prompt.replace(
-            'Your ONLY two tools are: write_plan and transfer_to_image_video_creator.',
-            f'You have these tools: write_plan, transfer_to_image_video_creator, and text generation tools ({tool_names}).'
+            f'Your ONLY two tools are: write_plan and {handoff_tool_name}.',
+            f'You have these tools: write_plan, {handoff_tool_name}, and text generation tools ({tool_names}).'
         ) + f"""
 
 TEXT GENERATION WORKFLOW (mandatory when text tools are available):
@@ -903,7 +949,7 @@ scene details, or other rich textual content — you MUST use a text tool:
   Step 3. Place that exact text as the `description` of the relevant write_plan step(s).
           The creator agent reads step descriptions verbatim — completeness is essential.
   Step 4. Call write_plan with the steps populated from the text tool output.
-  Step 5. Call transfer_to_image_video_creator.
+  Step 5. Call {handoff_tool_name}.
 
 For simple tasks (e.g. "generate 1 image of a cat"), you may skip the text tool
 and call write_plan directly.
