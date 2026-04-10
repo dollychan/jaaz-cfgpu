@@ -81,7 +81,15 @@ You MUST:
 3. Do NOT analyze or describe the reference images — just pass the file_ids directly.
 {multi_image_rule}
 5. For video generation → pass input_images to the video tool as well.
-6. Don't set image_role to "first_frame" or "first_last_frame" unless the user explicitly specifies that role — when in doubt, use "reference_image" for all input images to avoid generation errors.
+
+IMAGE ROLE RULE (CRITICAL):
+6. NEVER set image_role to "first_frame" or "first_last_frame" unless the user EXPLICITLY uses phrases like:
+   - "use this image as the first frame"
+   - "start the video with this image"
+   - "image-to-video" (explicit i2v mode)
+   Otherwise, ALWAYS use image_role="auto" (defaults to reference_image) or image_role="reference_image".
+7. Phrases like "让图片动起来", "animate this image", "make the image move" do NOT mean first_frame — they mean reference_image style animation.
+8. When in doubt, ALWAYS use image_role="auto" or "reference_image" to avoid generation errors.
 
 CRITICAL: ALWAYS pass the file_id directly to the tool's input_images parameter. The system automatically converts file_ids to the correct format. Never ask the user to provide a public URL - just call the tool with the file_id as-is.
 
@@ -141,13 +149,25 @@ When the user's message contains an aspect ratio tag like:
 <aspect_ratio>16:9</aspect_ratio>
 You MUST pass the extracted value directly to the tool's `aspect_ratio` parameter.
 CRITICAL: NEVER ignore the <aspect_ratio> tag. Always respect the user's specified aspect ratio.
+
+QUANTITY DETECTION:
+When the user's message contains a quantity tag like:
+<quantity>5</quantity>
+You MUST generate exactly that many images/videos in total.
+Rules:
+1. Extract the integer N from the <quantity> tag.
+2. Call the generation tool N times (one call per image/video), unless the tool has a `count` or `n` parameter — in that case pass N directly.
+3. If N > 10, apply BATCH GENERATION RULES below (batches of ≤10 per call sequence).
+4. If there is NO <quantity> tag, generate exactly 1 image/video unless the user's text explicitly states a different number.
+CRITICAL: NEVER ignore the <quantity> tag. The <quantity> value overrides any default. Do NOT generate more or fewer items than specified.
 """
 
         batch_generation_prompt = """
 
-BATCH GENERATION RULES:
-- If user needs >10 images: Generate in batches of max 10 images each
-- Complete each batch before starting next batch
+BATCH GENERATION RULES (applies when total count > 10):
+- Determine total count from <quantity> tag or user text.
+- Generate in batches of max 10 images each.
+- Complete each batch before starting the next.
 - Example for 20 images: Batch 1 (1-10) → "Batch 1 done!" → Batch 2 (11-20) → "All 20 images completed!"
 
 """
@@ -216,8 +236,9 @@ If any steps were skipped due to errors (see ERROR CLASSIFICATION RULES above):
         # tool names, error handling, task completion) are always enforced regardless
         # of what the user wrote in their canvas system prompt.
         self.custom_prompt_appendix = (
-            image_input_detection_prompt  # must still detect <input_images/videos/audios>
+            image_input_detection_prompt  # must still detect <input_images/videos/audios> and <quantity>
             + available_tools_prompt      # prevent hallucinated tool names OR report no-tools error
+            + batch_generation_prompt     # batch rules for large quantities
             + error_handling_prompt       # content policy / error → stop, no retry
             + completion_prompt           # task done → plain text reply, no more tools
         )
