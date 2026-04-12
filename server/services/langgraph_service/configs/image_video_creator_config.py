@@ -150,6 +150,13 @@ When the user's message contains an aspect ratio tag like:
 You MUST pass the extracted value directly to the tool's `aspect_ratio` parameter.
 CRITICAL: NEVER ignore the <aspect_ratio> tag. Always respect the user's specified aspect ratio.
 
+RESOLUTION DETECTION:
+When the user's message contains a resolution tag like:
+<resolution>720p</resolution>
+You MUST pass the extracted value directly to the video generation tool's `resolution` parameter.
+Allowed values: 480p, 720p.
+CRITICAL: NEVER ignore the <resolution> tag. Always respect the user's specified resolution.
+
 QUANTITY DETECTION:
 When the user's message contains a quantity tag like:
 <quantity>5</quantity>
@@ -160,6 +167,12 @@ Rules:
 3. If N > 10, apply BATCH GENERATION RULES below (batches of ≤10 per call sequence).
 4. If there is NO <quantity> tag, generate exactly 1 image/video unless the user's text explicitly states a different number.
 CRITICAL: NEVER ignore the <quantity> tag. The <quantity> value overrides any default. Do NOT generate more or fewer items than specified.
+
+PARAMETER PRIORITY RULE (CRITICAL):
+When multiple messages in the conversation contain parameter tags (<aspect_ratio>, <quantity>, <duration>, <resolution>):
+- ALWAYS use the parameter values from the LATEST (most recent) user message.
+- IGNORE parameter tags from earlier messages in the conversation history.
+- This ensures the current request uses the most up-to-date settings from the user's input.
 """
 
         batch_generation_prompt = """

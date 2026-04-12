@@ -324,13 +324,15 @@ def _pre_model_hook(state: dict) -> dict:
         for tc in msg.tool_calls:
             # 修复格式问题，但不删除 tool_call
             _fix_tc_type(tc)
-            # LangChain 格式：确保 args 不为 None
-            if 'args' in tc and tc['args'] is None:
-                tc['args'] = {}
-            # OpenAI 格式：确保 arguments 不为 None
+            # LangChain 格式：确保 args 不为 None 或空字符串
+            if 'args' in tc:
+                if tc['args'] is None or tc['args'] == '':
+                    tc['args'] = {}
+            # OpenAI 格式：确保 arguments 不为 None 或空字符串
             fn = tc.get('function')
-            if fn is not None and fn.get('arguments') is None:
-                fn['arguments'] = '{}'
+            if fn is not None:
+                if fn.get('arguments') is None or fn.get('arguments') == '':
+                    fn['arguments'] = '{}'
     return state
 
 
