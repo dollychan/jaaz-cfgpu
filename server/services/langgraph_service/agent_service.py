@@ -335,10 +335,8 @@ def _pre_model_hook(state: dict) -> dict:
     这些消息可能包含 LLM 产生的空 name 或空 args 的 tool_calls。
     此 hook 在每轮调用前清理它们，避免 Qwen API 报错。
 
-    注意：只修复格式问题（空 args、错误的 type），不删除 tool_calls。
-    删除 tool_calls 会导致 LangGraph 状态损坏。
-
-    同时兼容 LangChain 内部格式（name/args）和 OpenAI 格式（function.name）。
+    注意：对于严重无效的 tool_calls（空名称），修复为占位符名称，
+    让 ToolNode 捕获并返回明确的错误消息。
     """
     from langchain_core.messages import AIMessage
     msgs = state.get('messages', [])
@@ -350,7 +348,7 @@ def _pre_model_hook(state: dict) -> dict:
         if not getattr(msg, 'tool_calls', None):
             continue
 
-        # 检测并记录无效的 tool_calls
+        # 分类处理 tool_calls
         invalid_tcs = []
         fixed_tcs = []
 
@@ -358,20 +356,29 @@ def _pre_model_hook(state: dict) -> dict:
             tc_name = _tc_name(tc)
             tc_type = tc.get('type', '')
             fn = tc.get('function')
-            tc_id = tc.get('id', 'unknown')
+            tc_id = tc.get('id', '')
 
             issues = []
+            is_severely_invalid = False
 
-            # 检查空名称
+            # 检查严重无效的情况（空名称）
             if not tc_name or tc_name.strip() == '':
                 issues.append('empty function.name')
-                invalid_tcs.append({
-                    'index': i,
-                    'tc': tc,
-                    'reason': 'empty function.name'
-                })
+                is_severely_invalid = True
+                # 修复为占位符名称，让 ToolNode 捕获
+                tc['name'] = '__invalid_empty_tool_name__'
+                if 'function' in tc and isinstance(tc.get('function'), dict):
+                    tc['function']['name'] = '__invalid_empty_tool_name__'
+                total_fixed += 1
 
-            # 修复空 type（关键修复）
+            # 修复空 ID（生成一个）
+            if not tc_id or tc_id.strip() == '':
+                import uuid
+                tc['id'] = f'invalid_{uuid.uuid4().hex[:8]}'
+                issues.append('empty tool_call_id → generated')
+                total_fixed += 1
+
+            # 修复空 type
             if not tc_type or tc_type.strip() == '':
                 tc['type'] = 'function'
                 issues.append('empty type → fixed to "function"')
@@ -379,11 +386,11 @@ def _pre_model_hook(state: dict) -> dict:
 
             # 检查 function 字段
             if fn is None:
-                tc['function'] = {'name': tc_name or 'unknown', 'arguments': '{}'}
+                tc['function'] = {'name': tc.get('name', 'unknown'), 'arguments': '{}'}
                 issues.append('missing function → added')
                 total_fixed += 1
             elif not isinstance(fn, dict):
-                tc['function'] = {'name': tc_name or 'unknown', 'arguments': '{}'}
+                tc['function'] = {'name': tc.get('name', 'unknown'), 'arguments': '{}'}
                 issues.append('invalid function type → replaced')
                 total_fixed += 1
 
@@ -395,7 +402,7 @@ def _pre_model_hook(state: dict) -> dict:
                     issues.append('empty args → fixed to {}')
                     total_fixed += 1
 
-            # 修复 OpenAI 格式的 arguments（关键修复）
+            # 修复 OpenAI 格式的 arguments
             fn = tc.get('function')
             if fn is not None and isinstance(fn, dict):
                 args = fn.get('arguments')
@@ -404,21 +411,27 @@ def _pre_model_hook(state: dict) -> dict:
                     issues.append('invalid arguments → fixed to "{}"')
                     total_fixed += 1
 
-            if issues:
+            if is_severely_invalid:
+                invalid_tcs.append({
+                    'index': i,
+                    'tc': tc,
+                    'reasons': issues
+                })
+            elif issues:
                 fixed_tcs.append({
                     'index': i,
                     'name': tc_name,
-                    'id': tc_id,
+                    'id': tc.get('id', ''),
                     'issues': issues
                 })
 
         if invalid_tcs:
             print(f"\n{'='*80}")
-            print(f"⚠️  [pre_model_hook] 检测到 {len(invalid_tcs)} 个严重无效的 tool_calls:")
+            print(f"⚠️  [pre_model_hook] 修复了 {len(invalid_tcs)} 个严重无效的 tool_calls (设为占位符):")
             print(f"{'─'*80}")
             for inv in invalid_tcs:
-                print(f"  ❌ tool_calls[{inv['index']}]: {inv['reason']}")
-                print(f"     完整 tool_call: {inv['tc']}")
+                print(f"  🔧 tool_calls[{inv['index']}]: {', '.join(inv['reasons'])}")
+                print(f"     修复后: {inv['tc']}")
             print(f"{'='*80}\n")
 
         if fixed_tcs:
@@ -476,13 +489,18 @@ def _make_safe_tool_node(tools: list, **kwargs) -> tuple:
         # 跳过空名称的工具调用
         if not name:
             return ToolMessage(
-                content='<skipped> Empty tool_call ignored',
+                content='<error> Empty tool_call detected and skipped.\n\nIMPORTANT: You MUST now call transfer_to_assistant with empty args {} to hand off execution to the creator agent. Do NOT retry or call any other tool.',
                 tool_call_id=tool_call_id,
                 name='skipped',
             )
         # 跳过未注册的工具调用（如幽灵空 tool_call 残留的名称）
         if name not in valid_tool_names:
             return ToolMessage(
+                content=f'<error> Tool "{name}" is not registered, ignored.\n\nIMPORTANT: You MUST now call transfer_to_assistant with empty args {{}} to hand off execution to the creator agent. Do NOT retry or call any other tool.',
+                tool_call_id=tool_call_id,
+                name='skipped',
+            )
+        return await execute(request)
                 content=f'<skipped> Tool "{name}" is not registered, ignored',
                 tool_call_id=tool_call_id,
                 name='skipped',
