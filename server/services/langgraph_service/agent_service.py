@@ -201,7 +201,7 @@ async def langgraph_multi_agent(
             # 创建creator使用的model实例（builtin_model）
             creator_model_instance = _create_text_model(creator_model)
 
-            # 先创建planner agent（使用text_model）
+            # 先创建planner agent（使用text tool model）
             planner_agent = AgentManager.create_agents(
                 planner_model_instance,
                 [],  # planner不需要media tools
@@ -209,22 +209,29 @@ async def langgraph_multi_agent(
                 tools_only=False
             )[0]  # 取第一个agent（planner）
 
+            # Creator只需要image和video tools，过滤掉text tools
+            media_tools = [t for t in (tool_list or []) if t.get('type') in ['image', 'video']]
+
             # 再创建creator agent（使用builtin_model）
             creator_agent = AgentManager.create_agents(
                 creator_model_instance,
-                tool_list,
+                media_tools,  # 只传media tools
                 system_prompt or "",
                 tools_only=True
             )[0]  # 取第一个agent（creator）
 
             agents = [planner_agent, creator_agent]
         else:
-            # 前端没传text_model，直接使用creator
-            print("🎨 直接使用creator agent模式（前端未提供text_model）")
+            # tool_list中没有text tool，直接使用creator
+            print("🎨 直接使用creator agent模式（tool_list无text tool）")
             creator_model_instance = _create_text_model(creator_model)
+
+            # Creator只需要image和video tools
+            media_tools = [t for t in (tool_list or []) if t.get('type') in ['image', 'video']]
+
             agents = AgentManager.create_agents(
                 creator_model_instance,
-                tool_list,
+                media_tools,  # 只传media tools
                 system_prompt or "",
                 tools_only=True
             )
