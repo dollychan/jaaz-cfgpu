@@ -159,10 +159,15 @@ async def langgraph_multi_agent(
             text_tools = [t for t in (tool_list or []) if t.get('type') == 'text']
             if text_tools:
                 first_text_tool = text_tools[0]
+                provider = first_text_tool.get('provider', '')
+                # 从config_service获取provider的URL配置
+                provider_config = config_service.app_config.get(provider, {})
+                url = provider_config.get('url', '')
+
                 effective_model = {
-                    'provider': first_text_tool.get('provider', ''),
+                    'provider': provider,
                     'model': first_text_tool.get('id', ''),
-                    'url': '',
+                    'url': url,
                     'type': 'text',
                 }
                 print(f"⚠️ text_model为空，使用fallback: {effective_model}")
