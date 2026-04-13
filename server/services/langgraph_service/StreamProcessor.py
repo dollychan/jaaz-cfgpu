@@ -61,6 +61,11 @@ class StreamProcessor:
                 raise
             raise
 
+        # 发送完成事件
+        await self.websocket_service(self.session_id, {
+            'type': 'done'
+        })
+
     async def _handle_chunk(self, chunk: Any) -> None:
         # print('👇chunk', chunk)
         """处理单个chunk"""
