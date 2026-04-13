@@ -309,219 +309,6 @@ def _fix_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return fixed_messages
 
 
-def _tc_name(tc: dict) -> str:
-    """从 LangChain 或 OpenAI 格式的 tool_call dict 中提取工具名。
-
-    LangChain 内部格式: {'name': '...', 'args': {...}, 'id': '...', 'type': 'function'}
-    OpenAI API 格式:    {'function': {'name': '...', 'arguments': '...'}, 'id': '...', 'type': 'function'}
-    """
-    return tc.get('name') or (tc.get('function') or {}).get('name') or ''
-
-
-def _fix_tc_type(tc: dict) -> None:
-    """确保 tool_call 的 type 字段为 'function'（OpenAI 格式要求）。
-
-    LangChain 内部可能用 'tool_call'，但 OpenAI API 的 Pydantic 模型
-    要求 type 必须是 'function'，否则序列化会报 PydanticSerializationUnexpectedValue。
-    """
-    if not tc.get('type') or tc.get('type') != 'function':
-        tc['type'] = 'function'
-
-
-def _pre_model_hook(state: dict) -> dict:
-    """在每次 LLM 调用前修复 state 中历史 AIMessage 的 tool_calls。
-
-    LangGraph 在 streaming 多轮对话中会累积新的 assistant 消息，
-    这些消息可能包含 LLM 产生的空 name 或空 args 的 tool_calls。
-    此 hook 在每轮调用前清理它们，避免 Qwen API 报错。
-
-    注意：对于严重无效的 tool_calls（空名称），直接删除它们，
-    因为 LangGraph 要求每个 tool_call 必须有对应的 ToolMessage。
-    """
-    from langchain_core.messages import AIMessage
-    msgs = state.get('messages', [])
-    total_fixed = 0
-
-    for msg in msgs:
-        if not isinstance(msg, AIMessage):
-            continue
-        if not getattr(msg, 'tool_calls', None):
-            continue
-
-        # 分类处理 tool_calls
-        invalid_tcs = []
-        fixed_tcs = []
-        valid_tcs = []
-
-        for i, tc in enumerate(msg.tool_calls):
-            tc_name = _tc_name(tc)
-            tc_type = tc.get('type', '')
-            fn = tc.get('function')
-            tc_id = tc.get('id', '')
-
-            issues = []
-
-            # 检查严重无效的情况（空名称）- 直接删除
-            if not tc_name or tc_name.strip() == '':
-                invalid_tcs.append({
-                    'index': i,
-                    'tc': tc,
-                    'reason': 'empty function.name - removed'
-                })
-                continue  # 跳过，不添加到 valid_tcs
-
-            # 修复空 ID（生成一个）
-            if not tc_id or tc_id.strip() == '':
-                import uuid
-                tc['id'] = f'fixed_{uuid.uuid4().hex[:8]}'
-                issues.append('empty tool_call_id → generated')
-                total_fixed += 1
-
-            # 修复空 type
-            if not tc_type or tc_type.strip() == '':
-                tc['type'] = 'function'
-                issues.append('empty type → fixed to "function"')
-                total_fixed += 1
-
-            # 检查 function 字段
-            if fn is None:
-                tc['function'] = {'name': tc_name, 'arguments': '{}'}
-                issues.append('missing function → added')
-                total_fixed += 1
-            elif not isinstance(fn, dict):
-                tc['function'] = {'name': tc_name, 'arguments': '{}'}
-                issues.append('invalid function type → replaced')
-                total_fixed += 1
-
-            # 修复 OpenAI 格式的 arguments
-            fn = tc.get('function')
-            if fn is not None and isinstance(fn, dict):
-                args = fn.get('arguments')
-                if args is None or args == '' or not isinstance(args, str):
-                    fn['arguments'] = '{}'
-                    issues.append('invalid arguments → fixed to "{}"')
-                    total_fixed += 1
-
-            # 修复 LangChain 格式的 args
-            if 'args' in tc:
-                args_val = tc.get('args')
-                if args_val is None or args_val == '':
-                    tc['args'] = {}
-                    issues.append('empty args → fixed to {}')
-                    total_fixed += 1
-
-            if issues:
-                fixed_tcs.append({
-                    'index': i,
-                    'name': tc_name,
-                    'id': tc.get('id', ''),
-                    'issues': issues
-                })
-
-            valid_tcs.append(tc)  # 添加有效的 tool_call
-
-        # 更新消息的 tool_calls（只保留有效的）
-        msg.tool_calls = valid_tcs
-
-        if invalid_tcs:
-            print(f"\n{'='*80}")
-            print(f"⚠️  [pre_model_hook] 删除了 {len(invalid_tcs)} 个严重无效的 tool_calls (空名称):")
-            print(f"{'─'*80}")
-            for inv in invalid_tcs:
-                print(f"  ❌ tool_calls[{inv['index']}]: {inv['reason']}")
-                print(f"     原始: {inv['tc']}")
-            print(f"{'='*80}\n")
-
-        if fixed_tcs:
-            print(f"\n{'='*80}")
-            print(f"🔧 [pre_model_hook] 修复了 {len(fixed_tcs)} 个 tool_calls:")
-            print(f"{'─'*80}")
-            for ft in fixed_tcs:
-                print(f"  ✅ tool_calls[{ft['index']}] ({ft['name']}, id={ft['id']})")
-                for issue in ft['issues']:
-                    print(f"     - {issue}")
-            print(f"{'='*80}\n")
-
-    if total_fixed > 0:
-        print(f"📊 [pre_model_hook] 总修复数: {total_fixed} 个字段\n")
-
-    return state
-
-
-def _make_safe_tool_node(tools: list, **kwargs) -> tuple:
-    """创建安全的 ToolNode，自动跳过无效的 tool_call（空名称、不存在的工具）。
-
-    Returns:
-        tuple: (ToolNode, post_model_hook | None)
-        - 如果 langgraph-prebuilt 支持 awrap_tool_call，返回 (ToolNode, None)
-        - 否则返回 (ToolNode, None) - 旧版本不使用 post_model_hook，避免状态损坏
-
-    注意：旧版本 langgraph-prebuilt 没有 awrap_tool_call 参数。
-    直接修改 AIMessage.tool_calls 会导致 "No AIMessage found in input" 错误。
-    因此旧版本只能依赖 ToolNode 的默认错误处理，让 planner prompt 中的 ERROR HANDLING
-    指导 LLM 在收到错误后如何恢复。
-    """
-    from langchain_core.tools import BaseTool
-    from langchain_core.messages import ToolMessage
-    import inspect
-
-    # 收集所有已注册的工具名称
-    valid_tool_names: set[str] = set()
-    for t in tools:
-        if isinstance(t, BaseTool):
-            valid_tool_names.add(t.name)
-        elif hasattr(t, 'name'):
-            valid_tool_names.add(t.name)
-
-    async def _awrap_tool_call(request, execute):
-        """awrap_tool_call wrapper that receives ToolCallRequest (dataclass).
-
-        Args:
-            request: ToolCallRequest with fields: tool_call (dict), tool (BaseTool|None), state, runtime
-            execute: Async callable to execute the tool
-        """
-        tool_call = request.tool_call
-        name = _tc_name(tool_call)
-        tool_call_id = tool_call.get('id', 'unknown')
-
-        # 跳过空名称的工具调用
-        if not name:
-            return ToolMessage(
-                content='<error> Empty tool_call detected and skipped.\n\nIMPORTANT: You MUST now call transfer_to_assistant with empty args {} to hand off execution to the creator agent. Do NOT retry or call any other tool.',
-                tool_call_id=tool_call_id,
-                name='skipped',
-            )
-        # 跳过未注册的工具调用（如幽灵空 tool_call 残留的名称）
-        if name not in valid_tool_names:
-            return ToolMessage(
-                content=f'<error> Tool "{name}" is not registered, ignored.\n\nIMPORTANT: You MUST now call transfer_to_assistant with empty args {{}} to hand off execution to the creator agent. Do NOT retry or call any other tool.',
-                tool_call_id=tool_call_id,
-                name='skipped',
-            )
-        return await execute(request)
-
-    # 检查 ToolNode 是否支持 awrap_tool_call 参数（langgraph-prebuilt 1.0+）
-    tool_node_params = inspect.signature(ToolNode.__init__).parameters
-    if 'awrap_tool_call' in tool_node_params:
-        # 新版本：使用 awrap_tool_call 拦截无效 tool_calls
-        return ToolNode(tools, awrap_tool_call=_awrap_tool_call, **kwargs), None
-    else:
-        # 旧版本：不使用 post_model_hook（会导致状态损坏）
-        # 让 ToolNode 的默认错误处理机制处理无效 tool_calls
-        # planner prompt 中的 ERROR HANDLING 部分会指导 LLM 如何恢复
-        return ToolNode(tools, **kwargs), None
-
-
-def _post_model_hook(state: dict, tools: list) -> dict:
-    """【已弃用】不再使用 post_model_hook 过滤 tool_calls。
-
-    直接修改 msg.tool_calls 会破坏 LangGraph 内部状态对象，
-    导致 ToolNode._parse_input 找不到 AIMessage（No AIMessage found in input）。
-    改为在 ToolNode 层用 awrap_tool_call 处理无效调用。
-    """
-    return state
-
-
 def _parse_input_media_from_messages(messages: List[Dict[str, Any]]) -> Dict[str, List[str]]:
     """从最后一条用户消息中解析所有媒体引用，返回按顺序排列的有序列表。
 
@@ -1045,68 +832,23 @@ def _build_planner_agent(
     print(f"  🎯 总工具数量: {len(planner_tools)} 个")
     print(f"{'='*80}\n")
 
-    # 动态注入 text tool 工作流说明
-    planner_base_prompt = PlannerAgentConfig().system_prompt
-    # 替换 prompt 中的工具名称为实际工具名称
-    # 支持多种旧名称格式，确保替换成功
-    for old_name in ['transfer_to_image_video_creator', 'transfer_to_creator']:
-        planner_base_prompt = planner_base_prompt.replace(old_name, handoff_tool_name)
-
-    # 构建明确的工具列表（像creator一样强制）
-    available_tools_section = f"""
-
-AVAILABLE PLANNER TOOLS (use ONLY these exact tool names, do not invent others):
-  - write_plan [planning] (Create execution plan)
-  - {handoff_tool_name} [handoff] (Transfer to creator agent)
-CRITICAL: NEVER call a tool name that is not in the list above. Do NOT invent other tool names like 'transfer_to_image_video_creator' or similar variations.
-"""
-
-    if text_lc_tools:
-        tool_names = ', '.join(t.name for t in text_lc_tools)
-        # 添加text工具到列表
-        for t in text_lc_tools:
-            available_tools_section += f"  - {t.name} [text] ({t.name})\n"
-
-        planner_prompt = planner_base_prompt.replace(
-            f'Your ONLY two tools are: write_plan and {handoff_tool_name}.',
-            f'You have these tools: write_plan, {handoff_tool_name}, and text generation tools ({tool_names}).'
-        ) + available_tools_section + f"""
-
-TEXT TOOL WORKFLOW:
-For rich content (scripts, storylines, descriptions):
-1. Call text tool with prompt
-2. Use FULL output in write_plan steps
-3. Call write_plan ONCE
-4. Call {handoff_tool_name} ONCE
-
-For simple tasks: skip text tool, call write_plan then {handoff_tool_name}.
-"""
-    else:
-        planner_prompt = planner_base_prompt + available_tools_section
-
-    # 使用安全的 ToolNode（自动跳过无效的 tool_call）
-    # 返回 (ToolNode, post_model_hook | None)
-    planner_tool_node, planner_post_hook = _make_safe_tool_node(planner_tools)
+    # 使用 PlannerAgentConfig 的 prompt
+    planner_prompt = PlannerAgentConfig().system_prompt
 
     print(f"\n{'='*80}")
     print(f"🚀 创建 Planner Agent (create_react_agent):")
     print(f"{'─'*80}")
     print(f"  📛 name: 'planner'")
     print(f"  🧠 model: {type(planner_lm).__name__}")
-    print(f"  🛠️  tools (ToolNode): {type(planner_tool_node).__name__}")
-    print(f"      └─ 包装的工具数量: {len(planner_tools)} 个")
+    print(f"  🛠️  tools 数量: {len(planner_tools)} 个")
     print(f"  📝 prompt 长度: {len(planner_prompt)} 字符")
-    print(f"  🔧 pre_model_hook: {_pre_model_hook.__name__}")
-    print(f"  🔧 post_model_hook: {planner_post_hook.__name__ if planner_post_hook else 'None'}")
     print(f"{'='*80}\n")
 
     planner_agent = create_react_agent(
         name='planner',
         model=planner_lm,
-        tools=planner_tool_node,
+        tools=planner_tools,
         prompt=planner_prompt,
-        pre_model_hook=_pre_model_hook,
-        post_model_hook=planner_post_hook,
     )
 
     print(f"✅ Planner Agent 创建成功\n")
@@ -1136,28 +878,20 @@ def _build_creator_agent(
         print(f"  ⚠️  无 image/video 工具可用")
     print(f"{'='*80}\n")
 
-    # 使用安全的 ToolNode（自动跳过无效的 tool_call）
-    creator_tool_node, creator_post_hook = _make_safe_tool_node(media_lc_tools)
-
     print(f"\n{'='*80}")
     print(f"🚀 创建 Creator Agent (create_react_agent):")
     print(f"{'─'*80}")
     print(f"  📛 name: 'assistant'")
     print(f"  🧠 model: {type(orchestrator).__name__}")
-    print(f"  🛠️  tools (ToolNode): {type(creator_tool_node).__name__}")
-    print(f"      └─ 包装的工具数量: {len(media_lc_tools)} 个")
+    print(f"  🛠️  tools 数量: {len(media_lc_tools)} 个")
     print(f"  📝 prompt 长度: {len(creator_prompt)} 字符")
-    print(f"  🔧 pre_model_hook: {_pre_model_hook.__name__}")
-    print(f"  🔧 post_model_hook: {creator_post_hook.__name__ if creator_post_hook else 'None'}")
     print(f"{'='*80}\n")
 
     agent = create_react_agent(
         name='assistant',
         model=orchestrator,
-        tools=creator_tool_node,
+        tools=media_lc_tools,
         prompt=creator_prompt,
-        pre_model_hook=_pre_model_hook,
-        post_model_hook=creator_post_hook,
     )
 
     print(f"✅ Creator Agent 创建成功\n")

@@ -114,43 +114,12 @@ class AgentManager:
         print(f"  🎯 总工具数量: {len(business_tools)} 个业务工具 + {len(handoff_tools)} 个 handoff 工具 = {len(business_tools) + len(handoff_tools)} 个")
         print(f"{'='*80}\n")
 
-        # pre_model_hook: fix tool_calls in state before every LLM call.
-        # This catches phantom tool_calls produced by the LLM mid-stream
-        # (empty type, missing function/arguments) that _fix_chat_history
-        # at the entry point cannot reach.
-        def _pre_model_hook(state: dict) -> dict:
-            from langchain_core.messages import AIMessage
-            msgs = state.get('messages', [])
-            for i, msg in enumerate(msgs):
-                if not isinstance(msg, AIMessage):
-                    continue
-                if not getattr(msg, 'tool_calls', None):
-                    continue
-                fixed: list[dict] = []
-                for tc in msg.tool_calls:
-                    tc_type = tc.get('type', '')
-                    fn = tc.get('function')
-                    if not tc_type:
-                        tc_type = 'function'
-                        tc['type'] = 'function'
-                    if not fn or not fn.get('name'):
-                        continue
-                    if fn.get('arguments') is None:
-                        fn['arguments'] = '{}'
-                    fixed.append(tc)
-                if fixed:
-                    msg.tool_calls = fixed
-                else:
-                    msg.tool_calls = []
-            return state
-
         # 创建并返回 LangGraph 智能体
         return create_react_agent(
             name=config.name,
             model=model,
             tools=[*business_tools, *handoff_tools],
             prompt=config.system_prompt,
-            pre_model_hook=_pre_model_hook,
         )
 
     @staticmethod
