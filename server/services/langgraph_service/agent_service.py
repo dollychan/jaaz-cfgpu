@@ -1027,7 +1027,7 @@ async def langgraph_multi_agent(
 
         swarm = create_swarm(
             agents=agents,
-            default_active_agent='planner' if use_planner else 'assistant',
+            default_active_agent='planner' if use_planner else 'image_video_creator',
         )
 
         # 7. 准备消息 + 执行
