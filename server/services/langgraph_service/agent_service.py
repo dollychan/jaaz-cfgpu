@@ -158,7 +158,8 @@ async def langgraph_multi_agent(
         effective_model = text_model
         if not (text_model and text_model.get('model')):
             # 尝试builtin_model
-            builtin_model = settings_service.app_settings.get('builtin_model', {})
+            settings = settings_service.get_raw_settings()
+            builtin_model = settings.get('builtin_model', {})
             if builtin_model and builtin_model.get('model'):
                 # builtin_model配置了model，使用它
                 provider = builtin_model.get('provider', 'cfgpu')
