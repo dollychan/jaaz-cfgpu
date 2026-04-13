@@ -501,11 +501,6 @@ def _make_safe_tool_node(tools: list, **kwargs) -> tuple:
                 name='skipped',
             )
         return await execute(request)
-                content=f'<skipped> Tool "{name}" is not registered, ignored',
-                tool_call_id=tool_call_id,
-                name='skipped',
-            )
-        return await execute(request)
 
     # 检查 ToolNode 是否支持 awrap_tool_call 参数（langgraph-prebuilt 1.0+）
     tool_node_params = inspect.signature(ToolNode.__init__).parameters
