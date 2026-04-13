@@ -1,3 +1,4 @@
+# Import service modules
 from models.tool_model import ToolInfoJson
 from services.db_service import db_service
 from .StreamProcessor import StreamProcessor
@@ -9,6 +10,7 @@ from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
 from services.websocket_service import send_to_websocket  # type: ignore
 from services.config_service import config_service
+from services.settings_service import settings_service
 from typing import Optional, List, Dict, Any, cast, Set, TypedDict
 from models.config_model import ModelInfo
 
@@ -152,29 +154,44 @@ async def langgraph_multi_agent(
         # 0. 修复消息历史
         fixed_messages = _fix_chat_history(messages)
 
-        # 1. 确定使用的模型：优先使用text_model，否则fallback到tool_list中的text工具
+        # 1. 确定使用的模型：优先使用text_model，然后builtin_model，最后fallback到tool_list中的text工具
         effective_model = text_model
         if not (text_model and text_model.get('model')):
-            # Fallback: 从tool_list中找第一个text类型的工具作为模型
-            text_tools = [t for t in (tool_list or []) if t.get('type') == 'text']
-            if text_tools:
-                first_text_tool = text_tools[0]
-                provider = first_text_tool.get('provider', '')
-                # 从config_service获取provider的URL配置
+            # 尝试builtin_model
+            builtin_model = settings_service.app_settings.get('builtin_model', {})
+            if builtin_model and builtin_model.get('model'):
+                # builtin_model配置了model，使用它
+                provider = builtin_model.get('provider', 'cfgpu')
                 provider_config = config_service.app_config.get(provider, {})
-                url = provider_config.get('url', '')
 
                 effective_model = {
                     'provider': provider,
-                    'model': first_text_tool.get('id', ''),
-                    'url': url,
+                    'model': builtin_model.get('model', ''),
+                    'url': builtin_model.get('url') or provider_config.get('url', ''),
                     'type': 'text',
                 }
-                print(f"⚠️ text_model为空，使用fallback: {effective_model}")
+                print(f"⚠️ text_model为空，使用builtin_model: {effective_model}")
             else:
-                raise ValueError(
-                    "No text model available. Please provide text_model or include a text tool in tool_list."
-                )
+                # Fallback: 从tool_list中找第一个text类型的工具作为模型
+                text_tools = [t for t in (tool_list or []) if t.get('type') == 'text']
+                if text_tools:
+                    first_text_tool = text_tools[0]
+                    provider = first_text_tool.get('provider', '')
+                    # 从config_service获取provider的URL配置
+                    provider_config = config_service.app_config.get(provider, {})
+                    url = provider_config.get('url', '')
+
+                    effective_model = {
+                        'provider': provider,
+                        'model': first_text_tool.get('id', ''),
+                        'url': url,
+                        'type': 'text',
+                    }
+                    print(f"⚠️ text_model和builtin_model都为空，使用tool_list fallback: {effective_model}")
+                else:
+                    raise ValueError(
+                        "No text model available. Please provide text_model, configure builtin_model in settings, or include a text tool in tool_list."
+                    )
 
         # 2. 文本模型
         text_model_instance = _create_text_model(effective_model)
