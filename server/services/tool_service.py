@@ -241,13 +241,19 @@ class ToolService:
 
     def _register_required_tools(self):
         """注册必须的工具"""
+        print(f"\n{'='*80}")
+        print(f"🛠️  注册必须工具:")
+        print(f"{'─'*80}")
         try:
             self.tools["write_plan"] = {
                 "provider": "system",
                 "tool_function": write_plan_tool,
             }
+            print(f"  ✅ write_plan 工具已注册")
+            print(f"  📋 工具详情: provider='system', tool_function={type(write_plan_tool).__name__}")
         except ImportError as e:
-            print(f"❌ 注册必须工具失败 write_plan: {e}")
+            print(f"  ❌ 注册必须工具失败 write_plan: {e}")
+        print(f"{'='*80}\n")
 
     def register_tool(self, tool_id: str, tool_info: ToolInfo):
         """注册单个工具"""
@@ -275,8 +281,23 @@ class ToolService:
             traceback.print_stack()
 
     def get_tool(self, tool_name: str) -> BaseTool | None:
+        print(f"\n  🔍 get_tool('{tool_name}') 调用:")
         tool_info = self.tools.get(tool_name)
-        return tool_info.get("tool_function") if tool_info else None
+
+        if tool_info is None:
+            print(f"    ❌ 工具 '{tool_name}' 不存在于 self.tools 中")
+            print(f"    📋 当前已注册的工具: {list(self.tools.keys())}")
+            return None
+
+        tool_function = tool_info.get("tool_function")
+        if tool_function is None:
+            print(f"    ❌ 工具 '{tool_name}' 存在，但 tool_function 为 None")
+            print(f"    📋 tool_info 内容: {tool_info}")
+            return None
+
+        tool_name_attr = getattr(tool_function, 'name', 'unnamed')
+        print(f"    ✅ 成功获取工具: {tool_name} → {tool_name_attr}")
+        return tool_function
 
     def remove_tool(self, tool_id: str):
         self.tools.pop(tool_id)

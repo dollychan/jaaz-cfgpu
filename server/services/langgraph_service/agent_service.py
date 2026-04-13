@@ -884,6 +884,10 @@ def _build_planner_agent(
     Returns:
         (planner_agent, planner_prompt)
     """
+    print(f"\n{'='*100}")
+    print(f"🏗️  构建 Planner Agent")
+    print(f"{'─'*100}")
+
     first_text_json = text_tools_in_list[0]
     planner_model_info: ModelInfo = {
         'provider': first_text_json.get('provider', ''),
@@ -894,16 +898,40 @@ def _build_planner_agent(
         'type': 'text',
     }
     planner_lm = _create_text_model(planner_model_info)
+
+    print(f"\n{'='*80}")
+    print(f"🔧 获取 Planner 工具:")
+    print(f"{'─'*80}")
+
+    # 获取 write_plan 工具
     write_plan_lc = tool_service.get_tool('write_plan')
-    # 注意：agent_name 必须与 create_react_agent 中的 name 参数一致
-    # 工具名称会自动生成为 transfer_to_<agent_name>
+    if write_plan_lc:
+        print(f"  ✅ write_plan 工具获取成功: {write_plan_lc.name if hasattr(write_plan_lc, 'name') else 'unnamed'}")
+    else:
+        print(f"  ❌ write_plan 工具获取失败 (返回 None)")
+
+    # 创建 handoff 工具
     handoff_to_creator = create_handoff_tool(
         agent_name='assistant',
         description='Transfer to the image/video creator agent to execute the plan.',
     )
+    if handoff_to_creator:
+        print(f"  ✅ handoff 工具创建成功: {handoff_to_creator.name}")
+    else:
+        print(f"  ❌ handoff 工具创建失败 (返回 None)")
+
+    # 收集 text 工具
+    print(f"  📋 text_lc_tools 数量: {len(text_lc_tools)}")
+    if text_lc_tools:
+        print(f"  📦 text_lc_tools: {[t.name if hasattr(t, 'name') else 'unnamed' for t in text_lc_tools]}")
+
     # 更新 prompt 中的工具名称以匹配实际工具
     handoff_tool_name = handoff_to_creator.name  # 实际工具名称: transfer_to_assistant
     planner_tools = [t for t in [write_plan_lc, handoff_to_creator] + text_lc_tools if t is not None]
+
+    print(f"\n  📦 最终 planner_tools 列表: {[t.name if hasattr(t, 'name') else 'unnamed' for t in planner_tools]}")
+    print(f"  🎯 总工具数量: {len(planner_tools)} 个")
+    print(f"{'='*80}\n")
 
     # 动态注入 text tool 工作流说明
     planner_base_prompt = PlannerAgentConfig().system_prompt
@@ -940,6 +968,18 @@ and call write_plan directly.
     # 返回 (ToolNode, post_model_hook | None)
     planner_tool_node, planner_post_hook = _make_safe_tool_node(planner_tools)
 
+    print(f"\n{'='*80}")
+    print(f"🚀 创建 Planner Agent (create_react_agent):")
+    print(f"{'─'*80}")
+    print(f"  📛 name: 'planner'")
+    print(f"  🧠 model: {type(planner_lm).__name__}")
+    print(f"  🛠️  tools (ToolNode): {type(planner_tool_node).__name__}")
+    print(f"      └─ 包装的工具数量: {len(planner_tools)} 个")
+    print(f"  📝 prompt 长度: {len(planner_prompt)} 字符")
+    print(f"  🔧 pre_model_hook: {_pre_model_hook.__name__}")
+    print(f"  🔧 post_model_hook: {planner_post_hook.__name__ if planner_post_hook else 'None'}")
+    print(f"{'='*80}\n")
+
     planner_agent = create_react_agent(
         name='planner',
         model=planner_lm,
@@ -948,6 +988,10 @@ and call write_plan directly.
         pre_model_hook=_pre_model_hook,
         post_model_hook=planner_post_hook,
     )
+
+    print(f"✅ Planner Agent 创建成功\n")
+    print(f"{'='*100}\n")
+
     return planner_agent, planner_prompt
 
 
@@ -958,10 +1002,36 @@ def _build_creator_agent(
 ) -> Any:
     """创建 Creator agent。"""
 
+    print(f"\n{'='*100}")
+    print(f"🏗️  构建 Creator Agent")
+    print(f"{'─'*100}")
+
+    print(f"\n{'='*80}")
+    print(f"🔧 Creator 工具配置:")
+    print(f"{'─'*80}")
+    print(f"  📋 media_lc_tools 数量: {len(media_lc_tools)}")
+    if media_lc_tools:
+        print(f"  📦 media_lc_tools: {[t.name if hasattr(t, 'name') else 'unnamed' for t in media_lc_tools]}")
+    else:
+        print(f"  ⚠️  无 image/video 工具可用")
+    print(f"{'='*80}\n")
+
     # 使用安全的 ToolNode（自动跳过无效的 tool_call）
     creator_tool_node, creator_post_hook = _make_safe_tool_node(media_lc_tools)
 
-    return create_react_agent(
+    print(f"\n{'='*80}")
+    print(f"🚀 创建 Creator Agent (create_react_agent):")
+    print(f"{'─'*80}")
+    print(f"  📛 name: 'assistant'")
+    print(f"  🧠 model: {type(orchestrator).__name__}")
+    print(f"  🛠️  tools (ToolNode): {type(creator_tool_node).__name__}")
+    print(f"      └─ 包装的工具数量: {len(media_lc_tools)} 个")
+    print(f"  📝 prompt 长度: {len(creator_prompt)} 字符")
+    print(f"  🔧 pre_model_hook: {_pre_model_hook.__name__}")
+    print(f"  🔧 post_model_hook: {creator_post_hook.__name__ if creator_post_hook else 'None'}")
+    print(f"{'='*80}\n")
+
+    agent = create_react_agent(
         name='assistant',
         model=orchestrator,
         tools=creator_tool_node,
@@ -969,6 +1039,11 @@ def _build_creator_agent(
         pre_model_hook=_pre_model_hook,
         post_model_hook=creator_post_hook,
     )
+
+    print(f"✅ Creator Agent 创建成功\n")
+    print(f"{'='*100}\n")
+
+    return agent
 
 
 async def _run_stream_with_retry(
