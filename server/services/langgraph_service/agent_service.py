@@ -1051,12 +1051,26 @@ def _build_planner_agent(
     # 支持多种旧名称格式，确保替换成功
     for old_name in ['transfer_to_image_video_creator', 'transfer_to_creator']:
         planner_base_prompt = planner_base_prompt.replace(old_name, handoff_tool_name)
+
+    # 构建明确的工具列表（像creator一样强制）
+    available_tools_section = f"""
+
+AVAILABLE PLANNER TOOLS (use ONLY these exact tool names, do not invent others):
+  - write_plan [planning] (Create execution plan)
+  - {handoff_tool_name} [handoff] (Transfer to creator agent)
+CRITICAL: NEVER call a tool name that is not in the list above. Do NOT invent other tool names like 'transfer_to_image_video_creator' or similar variations.
+"""
+
     if text_lc_tools:
         tool_names = ', '.join(t.name for t in text_lc_tools)
+        # 添加text工具到列表
+        for t in text_lc_tools:
+            available_tools_section += f"  - {t.name} [text] ({t.name})\n"
+
         planner_prompt = planner_base_prompt.replace(
             f'Your ONLY two tools are: write_plan and {handoff_tool_name}.',
             f'You have these tools: write_plan, {handoff_tool_name}, and text generation tools ({tool_names}).'
-        ) + f"""
+        ) + available_tools_section + f"""
 
 TEXT GENERATION WORKFLOW (mandatory when text tools are available):
 Available text tools: {tool_names}
@@ -1074,7 +1088,7 @@ For simple tasks (e.g. "generate 1 image of a cat"), you may skip the text tool
 and call write_plan directly.
 """
     else:
-        planner_prompt = planner_base_prompt
+        planner_prompt = planner_base_prompt + available_tools_section
 
     # 使用安全的 ToolNode（自动跳过无效的 tool_call）
     # 返回 (ToolNode, post_model_hook | None)
