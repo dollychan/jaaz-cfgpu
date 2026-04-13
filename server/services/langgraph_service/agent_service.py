@@ -811,7 +811,7 @@ def _build_planner_agent(
 
     # 创建 handoff 工具
     handoff_to_creator = create_handoff_tool(
-        agent_name='assistant',
+        agent_name='image_video_creator',
         description='Transfer to the image/video creator agent to execute the plan.',
     )
     if handoff_to_creator:
@@ -825,7 +825,7 @@ def _build_planner_agent(
         print(f"  📦 text_lc_tools: {[t.name if hasattr(t, 'name') else 'unnamed' for t in text_lc_tools]}")
 
     # 更新 prompt 中的工具名称以匹配实际工具
-    handoff_tool_name = handoff_to_creator.name  # 实际工具名称: transfer_to_assistant
+    handoff_tool_name = handoff_to_creator.name  # 实际工具名称: transfer_to_image_video_creator
     planner_tools = [t for t in [write_plan_lc, handoff_to_creator] + text_lc_tools if t is not None]
 
     print(f"\n  📦 最终 planner_tools 列表: {[t.name if hasattr(t, 'name') else 'unnamed' for t in planner_tools]}")
@@ -881,14 +881,14 @@ def _build_creator_agent(
     print(f"\n{'='*80}")
     print(f"🚀 创建 Creator Agent (create_react_agent):")
     print(f"{'─'*80}")
-    print(f"  📛 name: 'assistant'")
+    print(f"  📛 name: 'image_video_creator'")
     print(f"  🧠 model: {type(orchestrator).__name__}")
     print(f"  🛠️  tools 数量: {len(media_lc_tools)} 个")
     print(f"  📝 prompt 长度: {len(creator_prompt)} 字符")
     print(f"{'='*80}\n")
 
     agent = create_react_agent(
-        name='assistant',
+        name='image_video_creator',
         model=orchestrator,
         tools=media_lc_tools,
         prompt=creator_prompt,
