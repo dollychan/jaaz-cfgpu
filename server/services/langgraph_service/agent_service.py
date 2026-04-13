@@ -321,6 +321,27 @@ def _pre_model_hook(state: dict) -> dict:
             continue
         if not getattr(msg, 'tool_calls', None):
             continue
+
+        # 检测并记录无效的 tool_calls
+        invalid_tcs = []
+        for i, tc in enumerate(msg.tool_calls):
+            tc_name = _tc_name(tc)
+            if not tc_name or tc_name.strip() == '':
+                invalid_tcs.append({
+                    'index': i,
+                    'tc': tc,
+                    'reason': 'empty function.name'
+                })
+
+        if invalid_tcs:
+            print(f"\n{'='*80}")
+            print(f"⚠️  [pre_model_hook] 检测到 {len(invalid_tcs)} 个无效的 tool_calls:")
+            print(f"{'─'*80}")
+            for inv in invalid_tcs:
+                print(f"  ❌ tool_calls[{inv['index']}]: {inv['reason']}")
+                print(f"     完整 tool_call: {inv['tc']}")
+            print(f"{'='*80}\n")
+
         for tc in msg.tool_calls:
             # 修复格式问题，但不删除 tool_call
             _fix_tc_type(tc)
