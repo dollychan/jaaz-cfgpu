@@ -250,9 +250,12 @@ def _fix_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 # The planner LLM sometimes emits tool_calls with type='' or no function.
                 tc_type = tool_call.get('type', '')
                 fn = tool_call.get('function')
-                if not tc_type:
-                    tc_type = 'function'
+
+                # 修复空 type（关键修复）
+                if not tc_type or tc_type.strip() == '':
                     tool_call['type'] = 'function'
+                    tc_type = 'function'
+
                 if not fn or not fn.get('name'):
                     removed_calls.append(tool_call_id or '(no_id)')
                     continue
@@ -339,6 +342,8 @@ def _pre_model_hook(state: dict) -> dict:
     """
     from langchain_core.messages import AIMessage
     msgs = state.get('messages', [])
+    total_fixed = 0
+
     for msg in msgs:
         if not isinstance(msg, AIMessage):
             continue
@@ -347,36 +352,88 @@ def _pre_model_hook(state: dict) -> dict:
 
         # 检测并记录无效的 tool_calls
         invalid_tcs = []
+        fixed_tcs = []
+
         for i, tc in enumerate(msg.tool_calls):
             tc_name = _tc_name(tc)
+            tc_type = tc.get('type', '')
+            fn = tc.get('function')
+            tc_id = tc.get('id', 'unknown')
+
+            issues = []
+
+            # 检查空名称
             if not tc_name or tc_name.strip() == '':
+                issues.append('empty function.name')
                 invalid_tcs.append({
                     'index': i,
                     'tc': tc,
                     'reason': 'empty function.name'
                 })
 
+            # 修复空 type（关键修复）
+            if not tc_type or tc_type.strip() == '':
+                tc['type'] = 'function'
+                issues.append('empty type → fixed to "function"')
+                total_fixed += 1
+
+            # 检查 function 字段
+            if fn is None:
+                tc['function'] = {'name': tc_name or 'unknown', 'arguments': '{}'}
+                issues.append('missing function → added')
+                total_fixed += 1
+            elif not isinstance(fn, dict):
+                tc['function'] = {'name': tc_name or 'unknown', 'arguments': '{}'}
+                issues.append('invalid function type → replaced')
+                total_fixed += 1
+
+            # 修复 LangChain 格式的 args
+            if 'args' in tc:
+                args_val = tc.get('args')
+                if args_val is None or args_val == '':
+                    tc['args'] = {}
+                    issues.append('empty args → fixed to {}')
+                    total_fixed += 1
+
+            # 修复 OpenAI 格式的 arguments（关键修复）
+            fn = tc.get('function')
+            if fn is not None and isinstance(fn, dict):
+                args = fn.get('arguments')
+                if args is None or args == '' or not isinstance(args, str):
+                    fn['arguments'] = '{}'
+                    issues.append('invalid arguments → fixed to "{}"')
+                    total_fixed += 1
+
+            if issues:
+                fixed_tcs.append({
+                    'index': i,
+                    'name': tc_name,
+                    'id': tc_id,
+                    'issues': issues
+                })
+
         if invalid_tcs:
             print(f"\n{'='*80}")
-            print(f"⚠️  [pre_model_hook] 检测到 {len(invalid_tcs)} 个无效的 tool_calls:")
+            print(f"⚠️  [pre_model_hook] 检测到 {len(invalid_tcs)} 个严重无效的 tool_calls:")
             print(f"{'─'*80}")
             for inv in invalid_tcs:
                 print(f"  ❌ tool_calls[{inv['index']}]: {inv['reason']}")
                 print(f"     完整 tool_call: {inv['tc']}")
             print(f"{'='*80}\n")
 
-        for tc in msg.tool_calls:
-            # 修复格式问题，但不删除 tool_call
-            _fix_tc_type(tc)
-            # LangChain 格式：确保 args 不为 None 或空字符串
-            if 'args' in tc:
-                if tc['args'] is None or tc['args'] == '':
-                    tc['args'] = {}
-            # OpenAI 格式：确保 arguments 不为 None 或空字符串
-            fn = tc.get('function')
-            if fn is not None:
-                if fn.get('arguments') is None or fn.get('arguments') == '':
-                    fn['arguments'] = '{}'
+        if fixed_tcs:
+            print(f"\n{'='*80}")
+            print(f"🔧 [pre_model_hook] 修复了 {len(fixed_tcs)} 个 tool_calls:")
+            print(f"{'─'*80}")
+            for ft in fixed_tcs:
+                print(f"  ✅ tool_calls[{ft['index']}] ({ft['name']}, id={ft['id']})")
+                for issue in ft['issues']:
+                    print(f"     - {issue}")
+            print(f"{'='*80}\n")
+
+    if total_fixed > 0:
+        print(f"📊 [pre_model_hook] 总修复数: {total_fixed} 个字段\n")
+
     return state
 
 
