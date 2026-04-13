@@ -22,9 +22,9 @@ class StepsInput(BaseModel):
     tool_call_id: Annotated[str, InjectedToolCallId]
 
 
-@tool("write_plan", 
+@tool("write_plan",
 description="""
-Write a plan to complete the current task in the order of execution, including the steps and the description of each step. 
+Write a plan to complete the current task in the order of execution, including the steps and the description of each step.
 The plan should be friendly to showcase to the user.
 """,
 args_schema=StepsInput)
@@ -34,4 +34,4 @@ def write_plan_tool(
     tool_call_id: Annotated[str, InjectedToolCallId],
 ) -> str:
     print("write_plan_tool")
-    return "<hide_in_user_ui> Plan made. Now you can start executing the plan, or handoff the task to the suitable agent who specializes in the steps of the plan.</hide_from_user>"
+    return "<hide_in_user_ui> Plan made successfully. IMPORTANT: You MUST now call transfer_to_assistant with empty args {} to hand off execution to the creator agent. Do NOT execute the plan yourself - you are a PLANNING-ONLY agent. </hide_from_user>"
