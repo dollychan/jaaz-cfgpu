@@ -152,8 +152,27 @@ async def langgraph_multi_agent(
         # 0. 修复消息历史
         fixed_messages = _fix_chat_history(messages)
 
+        # 1. 确定使用的模型：优先使用text_model，否则fallback到tool_list中的text工具
+        effective_model = text_model
+        if not (text_model and text_model.get('model')):
+            # Fallback: 从tool_list中找第一个text类型的工具作为模型
+            text_tools = [t for t in (tool_list or []) if t.get('type') == 'text']
+            if text_tools:
+                first_text_tool = text_tools[0]
+                effective_model = {
+                    'provider': first_text_tool.get('provider', ''),
+                    'model': first_text_tool.get('id', ''),
+                    'url': '',
+                    'type': 'text',
+                }
+                print(f"⚠️ text_model为空，使用fallback: {effective_model}")
+            else:
+                raise ValueError(
+                    "No text model available. Please provide text_model or include a text tool in tool_list."
+                )
+
         # 2. 文本模型
-        text_model_instance = _create_text_model(text_model)
+        text_model_instance = _create_text_model(effective_model)
 
         # 3. 创建智能体
         agents = AgentManager.create_agents(
