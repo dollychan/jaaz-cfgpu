@@ -235,8 +235,8 @@ If any steps were skipped due to errors (see ERROR CLASSIFICATION RULES above):
 """
 
         full_system_prompt = (
-            image_input_detection_prompt  # reference media rule first — highest priority
-            + system_prompt
+            system_prompt               # PLANNER HANDOFF RULE first — highest priority
+            + image_input_detection_prompt  # reference media rule
             + available_tools_prompt      # explicit image/video tool list to prevent hallucination
             + batch_generation_prompt
             + error_handling_prompt
