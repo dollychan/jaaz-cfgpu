@@ -146,7 +146,7 @@ async def langgraph_multi_agent(
         messages: 消息历史
         canvas_id: 画布ID
         session_id: 会话ID
-        text_model: 文本模型配置
+        text_model: 文本模型配置（前端传入，用于planner）
         tool_list: 工具模型配置列表（图像或视频模型）
         system_prompt: 系统提示词
     """
@@ -154,90 +154,68 @@ async def langgraph_multi_agent(
         # 0. 修复消息历史
         fixed_messages = _fix_chat_history(messages)
 
-        # 1. 确定使用的模型：优先使用text_model，然后builtin_model，最后fallback到tool_list中的text工具
-        effective_model = text_model
-        use_planner = False  # 标记是否使用planner
+        # 1. 决定是否使用planner：只有前端传了text_model才使用planner
+        use_planner = bool(text_model and text_model.get('model'))
 
-        if text_model and text_model.get('model'):
-            # 有text_model，使用planner模式
-            use_planner = True
-        else:
-            # 尝试builtin_model
-            settings = settings_service.get_raw_settings()
-            builtin_model = settings.get('builtin_model', {})
-            if builtin_model and builtin_model.get('model'):
-                # builtin_model配置了model，使用它
-                use_planner = True
-                provider = builtin_model.get('provider', 'cfgpu')
-                provider_config = config_service.app_config.get(provider, {})
+        # 2. 获取builtin_model配置（必须存在，用于creator agent）
+        settings = settings_service.get_raw_settings()
+        builtin_model = settings.get('builtin_model', {})
+        if not builtin_model or not builtin_model.get('model'):
+            raise ValueError(
+                "builtin_model is required. Please configure builtin_model in settings.json with a valid model."
+            )
 
-                effective_model = {
-                    'provider': provider,
-                    'model': builtin_model.get('model', ''),
-                    'url': builtin_model.get('url') or provider_config.get('url', ''),
-                    'type': 'text',
-                }
-                print(f"⚠️ text_model为空，使用builtin_model: {effective_model}")
-            else:
-                # Fallback: 从tool_list中找第一个text类型的工具作为模型
-                text_tools = [t for t in (tool_list or []) if t.get('type') == 'text']
-                if text_tools:
-                    use_planner = True
-                    first_text_tool = text_tools[0]
-                    provider = first_text_tool.get('provider', '')
-                    # 从config_service获取provider的URL配置
-                    provider_config = config_service.app_config.get(provider, {})
-                    url = provider_config.get('url', '')
+        # 3. 构建creator model配置
+        provider = builtin_model.get('provider', 'cfgpu')
+        provider_config = config_service.app_config.get(provider, {})
+        creator_model = {
+            'provider': provider,
+            'model': builtin_model.get('model', ''),
+            'url': builtin_model.get('url') or provider_config.get('url', ''),
+            'type': 'text',
+        }
+        print(f"📝 Creator model (builtin_model): {creator_model}")
 
-                    effective_model = {
-                        'provider': provider,
-                        'model': first_text_tool.get('id', ''),
-                        'url': url,
-                        'type': 'text',
-                    }
-                    print(f"⚠️ text_model和builtin_model都为空，使用tool_list fallback: {effective_model}")
-
-        # 2. 创建智能体
+        # 4. 创建智能体
         if use_planner:
-            # 有text model，使用planner-creator双agent模式
-            text_model_instance = _create_text_model(effective_model)
-            agents = AgentManager.create_agents(
-                text_model_instance,
-                tool_list,
+            # 前端传了text_model，使用planner制定计划
+            print("🗺️ 使用planner-creator双agent模式（前端提供了text_model）")
+            print(f"📝 Planner model (frontend): {text_model}")
+
+            # 创建planner使用的model实例
+            planner_model_instance = _create_text_model(text_model)
+
+            # 创建creator使用的model实例（builtin_model）
+            creator_model_instance = _create_text_model(creator_model)
+
+            # 先创建planner agent（使用text_model）
+            planner_agent = AgentManager.create_agents(
+                planner_model_instance,
+                [],  # planner不需要media tools
                 system_prompt or "",
                 tools_only=False
-            )
-        else:
-            # 没有text model，只创建creator agent，不使用planner
-            print("⚠️ 没有text model可用，跳过planner，直接使用creator agent")
-            # 需要一个model来创建creator，使用第一个image或video tool的provider
-            media_tools = [t for t in (tool_list or []) if t.get('type') in ['image', 'video']]
-            if not media_tools:
-                raise ValueError(
-                    "No text model or media tools available. Please provide text_model, builtin_model, or at least one image/video tool."
-                )
+            )[0]  # 取第一个agent（planner）
 
-            # 使用第一个media tool的provider配置作为creator的model
-            first_media_tool = media_tools[0]
-            provider = first_media_tool.get('provider', '')
-            provider_config = config_service.app_config.get(provider, {})
-
-            # 创建一个简单的model用于creator
-            fallback_model = {
-                'provider': provider,
-                'model': first_media_tool.get('id', ''),
-                'url': provider_config.get('url', ''),
-                'type': first_media_tool.get('type', 'image'),
-            }
-            print(f"⚠️ 使用media tool provider作为creator model: {fallback_model}")
-
-            text_model_instance = _create_text_model(fallback_model)
-            agents = AgentManager.create_agents(
-                text_model_instance,
+            # 再创建creator agent（使用builtin_model）
+            creator_agent = AgentManager.create_agents(
+                creator_model_instance,
                 tool_list,
                 system_prompt or "",
-                tools_only=True  # 只创建creator agent
+                tools_only=True
+            )[0]  # 取第一个agent（creator）
+
+            agents = [planner_agent, creator_agent]
+        else:
+            # 前端没传text_model，直接使用creator
+            print("🎨 直接使用creator agent模式（前端未提供text_model）")
+            creator_model_instance = _create_text_model(creator_model)
+            agents = AgentManager.create_agents(
+                creator_model_instance,
+                tool_list,
+                system_prompt or "",
+                tools_only=True
             )
+
         agent_names = [agent.name for agent in agents]
         print('👇agent_names', agent_names)
         last_agent = AgentManager.get_last_active_agent(
@@ -245,20 +223,20 @@ async def langgraph_multi_agent(
 
         print('👇last_agent', last_agent)
 
-        # 4. 创建智能体群组
+        # 5. 创建智能体群组
         swarm = create_swarm(
             agents=agents,  # type: ignore
             default_active_agent=last_agent if last_agent else agent_names[0]
         )
 
-        # 5. 创建上下文
+        # 6. 创建上下文
         context = {
             'canvas_id': canvas_id,
             'session_id': session_id,
             'tool_list': tool_list,
         }
 
-        # 6. 流处理
+        # 7. 流处理
         processor = StreamProcessor(
             session_id, db_service, send_to_websocket)  # type: ignore
         await processor.process_stream(swarm, fixed_messages, context)
