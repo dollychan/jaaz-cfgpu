@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Optional
 from langgraph.prebuilt import create_react_agent  # type: ignore
-from langgraph.graph.graph import CompiledGraph
+from langgraph.pregel import Pregel as CompiledGraph  # type: ignore
 from langchain_core.tools import BaseTool
 from models.tool_model import ToolInfoJson
 from services.langgraph_service.configs.image_video_creator_config import ImageVideoCreatorAgentConfig
@@ -73,20 +73,46 @@ class AgentManager:
         """
         # 创建智能体间切换工具
         handoff_tools: List[BaseTool] = []
+        print(f"\n{'='*80}")
+        print(f"🔄 创建 agent '{config.name}' 的 handoff 工具:")
+        print(f"{'─'*80}")
+        print(f"  📋 配置的 handoffs: {[h.get('agent_name') for h in config.handoffs]}")
+
         for handoff in config.handoffs:
+            agent_name = handoff['agent_name']
             handoff_tool = create_handoff_tool(
-                agent_name=handoff['agent_name'],
+                agent_name=agent_name,
                 description=handoff['description'],
             )
             if handoff_tool:
                 handoff_tools.append(handoff_tool)
+                print(f"  ✅ 成功创建 handoff 工具: transfer_to_{agent_name}")
+            else:
+                print(f"  ❌ 创建 handoff 工具失败: {agent_name} (返回 None)")
+
+        print(f"  📦 最终 handoff 工具列表: {[t.name for t in handoff_tools]}")
+        print(f"{'='*80}\n")
 
         # 获取业务工具
         business_tools: List[BaseTool] = []
+        print(f"\n{'='*80}")
+        print(f"🔧 创建 agent '{config.name}' 的工具配置:")
+        print(f"{'─'*80}")
+        print(f"  📋 配置的工具 ID 列表: {[t.get('id') for t in config.tools]}")
+
         for tool_json in config.tools:
-            tool = tool_service.get_tool(tool_json['id'])
+            tool_id = tool_json['id']
+            tool = tool_service.get_tool(tool_id)
             if tool:
                 business_tools.append(tool)
+                print(f"  ✅ 成功获取工具: {tool_id} → {tool.name if hasattr(tool, 'name') else 'unnamed'}")
+            else:
+                print(f"  ❌ 获取工具失败: {tool_id} (返回 None)")
+
+        print(f"\n  📦 最终业务工具列表: {[t.name if hasattr(t, 'name') else 'unnamed' for t in business_tools]}")
+        print(f"  🔄 Handoff 工具列表: {[t.name for t in handoff_tools]}")
+        print(f"  🎯 总工具数量: {len(business_tools)} 个业务工具 + {len(handoff_tools)} 个 handoff 工具 = {len(business_tools) + len(handoff_tools)} 个")
+        print(f"{'='*80}\n")
 
         # pre_model_hook: fix tool_calls in state before every LLM call.
         # This catches phantom tool_calls produced by the LLM mid-stream

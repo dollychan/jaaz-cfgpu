@@ -20,13 +20,13 @@ certifi
 websocket-client # needed for comfyui execution
 rich # needed for comfyui execution
 typer # needed for comfyui execution
-langgraph==0.4.8
-langgraph-checkpoint==2.0.26
-langgraph-prebuilt==0.2.2
-langgraph-sdk==0.1.70
-langgraph-swarm==0.0.11
-langchain-ollama==0.3.3
-langchain-openai==0.3.21
+langgraph==1.1.6
+langgraph-checkpoint==4.0.1
+langgraph-prebuilt==1.0.9
+langgraph-sdk==0.3.13
+langgraph-swarm==0.1.0
+langchain-ollama==1.1.0
+langchain-openai==1.1.12
 python-socketio==5.13.0
 pymediainfo
 openai-agents
