@@ -213,6 +213,11 @@ def _fix_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     if not messages:
         return messages
 
+    print(f"\n{'='*80}")
+    print(f"🔧 修复聊天历史中的 tool_calls")
+    print(f"{'─'*80}")
+    print(f"  📋 输入消息数: {len(messages)}")
+
     fixed_messages: List[Dict[str, Any]] = []
     tool_call_ids: Set[str] = set()
 
@@ -223,11 +228,16 @@ def _fix_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             if tool_call_id:
                 tool_call_ids.add(tool_call_id)
 
+    print(f"  📦 收集到的 ToolMessage IDs: {len(tool_call_ids)} 个")
+
     # 第二遍：修复AIMessage中的tool_calls
+    total_removed = 0
+    total_fixed_args = 0
     for msg in messages:
         if msg.get('role') == 'assistant' and msg.get('tool_calls'):
             valid_tool_calls: List[Dict[str, Any]] = []
             removed_calls: List[str] = []
+            fixed_args_calls: List[str] = []
 
             for tool_call in msg.get('tool_calls', []):
                 tool_call_id = tool_call.get('id')
@@ -252,16 +262,23 @@ def _fix_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 if fn is None:
                     fn = {}
                     tool_call['function'] = fn
-                if fn.get('arguments') is None:
+                # 确保 arguments 存在且是有效的 JSON 字符串
+                args = fn.get('arguments')
+                if args is None or args == '' or not isinstance(args, str):
                     fn['arguments'] = '{}'
+                    fixed_args_calls.append(fn.get('name', 'unknown'))
+                    total_fixed_args += 1
 
                 valid_tool_calls.append(tool_call)
 
             has_content = bool(msg.get('content'))
 
             if removed_calls:
-                print(
-                    f"🔧 修复消息历史：移除了 {len(removed_calls)} 个不完整的工具调用: {removed_calls}")
+                print(f"  ❌ 移除无效 tool_calls: {removed_calls}")
+                total_removed += len(removed_calls)
+
+            if fixed_args_calls:
+                print(f"  🔧 修复 arguments: {fixed_args_calls}")
 
             if valid_tool_calls:
                 # Keep valid tool_calls intact together with any content.
@@ -279,6 +296,12 @@ def _fix_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 fixed_messages.append(msg_copy)
         else:
             fixed_messages.append(msg)
+
+    print(f"\n  📊 修复统计:")
+    print(f"     - 移除无效 tool_calls: {total_removed} 个")
+    print(f"     - 修复 arguments 字段: {total_fixed_args} 个")
+    print(f"     - 输出消息数: {len(fixed_messages)} 条")
+    print(f"{'='*80}\n")
 
     return fixed_messages
 
