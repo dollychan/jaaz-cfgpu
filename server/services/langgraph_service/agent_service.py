@@ -1072,20 +1072,14 @@ CRITICAL: NEVER call a tool name that is not in the list above. Do NOT invent ot
             f'You have these tools: write_plan, {handoff_tool_name}, and text generation tools ({tool_names}).'
         ) + available_tools_section + f"""
 
-TEXT GENERATION WORKFLOW (mandatory when text tools are available):
-Available text tools: {tool_names}
+TEXT TOOL WORKFLOW:
+For rich content (scripts, storylines, descriptions):
+1. Call text tool with prompt
+2. Use FULL output in write_plan steps
+3. Call write_plan ONCE
+4. Call {handoff_tool_name} ONCE
 
-For tasks requiring scripts, storylines, marketing copy, character descriptions,
-scene details, or other rich textual content — you MUST use a text tool:
-  Step 1. Call the text generation tool with a detailed prompt for the content needed.
-  Step 2. Take the FULL output returned — do NOT summarize, shorten, or paraphrase it.
-  Step 3. Place that exact text as the `description` of the relevant write_plan step(s).
-          The creator agent reads step descriptions verbatim — completeness is essential.
-  Step 4. Call write_plan with the steps populated from the text tool output.
-  Step 5. Call {handoff_tool_name}.
-
-For simple tasks (e.g. "generate 1 image of a cat"), you may skip the text tool
-and call write_plan directly.
+For simple tasks: skip text tool, call write_plan then {handoff_tool_name}.
 """
     else:
         planner_prompt = planner_base_prompt + available_tools_section
