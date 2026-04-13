@@ -154,8 +154,9 @@ async def langgraph_multi_agent(
         # 0. 修复消息历史
         fixed_messages = _fix_chat_history(messages)
 
-        # 1. 决定是否使用planner：只有前端传了text_model才使用planner
-        use_planner = bool(text_model and text_model.get('model'))
+        # 1. 从tool_list判断是否有text tool，决定是否使用planner
+        text_tools = [t for t in (tool_list or []) if t.get('type') == 'text']
+        use_planner = bool(text_tools)
 
         # 2. 获取builtin_model配置（必须存在，用于creator agent）
         settings = settings_service.get_raw_settings()
@@ -178,12 +179,24 @@ async def langgraph_multi_agent(
 
         # 4. 创建智能体
         if use_planner:
-            # 前端传了text_model，使用planner制定计划
-            print("🗺️ 使用planner-creator双agent模式（前端提供了text_model）")
-            print(f"📝 Planner model (frontend): {text_model}")
+            # tool_list中有text tool，使用planner制定计划
+            print("🗺️ 使用planner-creator双agent模式（tool_list包含text tool）")
+
+            # 使用第一个text tool作为planner model
+            first_text_tool = text_tools[0]
+            text_tool_provider = first_text_tool.get('provider', '')
+            text_tool_provider_config = config_service.app_config.get(text_tool_provider, {})
+
+            planner_model = {
+                'provider': text_tool_provider,
+                'model': first_text_tool.get('id', ''),
+                'url': text_tool_provider_config.get('url', ''),
+                'type': 'text',
+            }
+            print(f"📝 Planner model (from tool_list): {planner_model}")
 
             # 创建planner使用的model实例
-            planner_model_instance = _create_text_model(text_model)
+            planner_model_instance = _create_text_model(planner_model)
 
             # 创建creator使用的model实例（builtin_model）
             creator_model_instance = _create_text_model(creator_model)
