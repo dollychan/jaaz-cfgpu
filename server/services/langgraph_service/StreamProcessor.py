@@ -48,22 +48,13 @@ class StreamProcessor:
         try:
             async for chunk in compiled_swarm.astream(
                 {"messages": messages},
-                config={**context, "recursion_limit": 15},
+                config=context,
                 stream_mode=["messages", "custom", 'values']
             ):
                 self.chunks_received += 1
                 await self._handle_chunk(chunk)
         except Exception as e:
             err_str = str(e)
-            # GraphRecursionError: agent exceeded recursion_limit steps without stopping.
-            # Treat as a clean end-of-loop rather than a fatal crash.
-            if 'GraphRecursionError' in type(e).__name__ or 'recursion limit' in err_str.lower():
-                print(f"⚠️ Agent hit recursion limit — stopping stream: {e}")
-                await self.websocket_service(self.session_id, {
-                    'type': 'info',
-                    'info': '已达到最大执行步数，任务已停止。'
-                })
-                return
             # Handle API response errors (e.g., 'NoneType' object is not iterable)
             if isinstance(e, TypeError) and "'NoneType' object is not iterable" in err_str:
                 print(f"❌ Upstream error detected: {e}")
