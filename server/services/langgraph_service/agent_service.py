@@ -2,15 +2,15 @@
 from models.tool_model import ToolInfoJson
 from services.db_service import db_service
 from .StreamProcessor import StreamProcessor
-from .agent_manager import AgentManager
+from .harness_graph import build_harness_graph
 import traceback
 from utils.http_client import HttpClient
-from langgraph_swarm import create_swarm  # type: ignore
 from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
 from services.websocket_service import send_to_websocket  # type: ignore
 from services.config_service import config_service
 from services.settings_service import settings_service
+from services.tool_service import tool_service
 from typing import Optional, List, Dict, Any, cast, Set, TypedDict
 from models.config_model import ModelInfo
 
@@ -169,97 +169,76 @@ async def langgraph_multi_agent(
         # 3. 构建creator model配置
         provider = builtin_model.get('provider', 'cfgpu')
         provider_config = config_service.app_config.get(provider, {})
-        creator_model = {
+        creator_model_info: ModelInfo = {
             'provider': provider,
             'model': builtin_model.get('model', ''),
             'url': builtin_model.get('url') or provider_config.get('url', ''),
             'type': 'text',
         }
-        print(f"📝 Creator model (builtin_model): {creator_model}")
+        print(f"📝 Creator model (builtin_model): {creator_model_info}")
 
-        # 4. 创建智能体
+        # 4. 实例化LLMs
+        creator_llm = _create_text_model(creator_model_info)
+        planner_llm = None
         if use_planner:
-            # tool_list中有text tool，使用planner制定计划
             print("🗺️ 使用planner-creator双agent模式（tool_list包含text tool）")
-
-            # 使用第一个text tool作为planner model
             first_text_tool = text_tools[0]
-            text_tool_provider = first_text_tool.get('provider', '')
-            text_tool_provider_config = config_service.app_config.get(text_tool_provider, {})
-
-            planner_model = {
-                'provider': text_tool_provider,
+            tp_config = config_service.app_config.get(first_text_tool.get('provider', ''), {})
+            planner_model_info: ModelInfo = {
+                'provider': first_text_tool.get('provider', ''),
                 'model': first_text_tool.get('id', ''),
-                'url': text_tool_provider_config.get('url', ''),
+                'url': tp_config.get('url', ''),
                 'type': 'text',
             }
-            print(f"📝 Planner model (from tool_list): {planner_model}")
-
-            # 创建planner使用的model实例
-            planner_model_instance = _create_text_model(planner_model)
-
-            # 创建creator使用的model实例（builtin_model）
-            creator_model_instance = _create_text_model(creator_model)
-
-            # 先创建planner agent（使用text tool model）
-            planner_agent = AgentManager.create_agents(
-                planner_model_instance,
-                [],  # planner不需要media tools
-                system_prompt or "",
-                tools_only=False
-            )[0]  # 取第一个agent（planner）
-
-            # Creator只需要image和video tools，过滤掉text tools
-            media_tools = [t for t in (tool_list or []) if t.get('type') in ['image', 'video']]
-
-            # 再创建creator agent（使用builtin_model）
-            creator_agent = AgentManager.create_agents(
-                creator_model_instance,
-                media_tools,  # 只传media tools
-                system_prompt or "",
-                tools_only=True
-            )[0]  # 取第一个agent（creator）
-
-            agents = [planner_agent, creator_agent]
+            planner_llm = _create_text_model(planner_model_info)
+            print(f"📝 Planner model: {planner_model_info['model']}")
         else:
-            # tool_list中没有text tool，直接使用creator
             print("🎨 直接使用creator agent模式（tool_list无text tool）")
-            creator_model_instance = _create_text_model(creator_model)
 
-            # Creator只需要image和video tools
-            media_tools = [t for t in (tool_list or []) if t.get('type') in ['image', 'video']]
+        # 5. 解析工具实例
+        write_plan_fn = tool_service.get_tool('write_plan')
+        planner_tool_instances = [write_plan_fn] if write_plan_fn else []
 
-            agents = AgentManager.create_agents(
-                creator_model_instance,
-                media_tools,  # 只传media tools
-                system_prompt or "",
-                tools_only=True
-            )
+        media_tool_jsons = [t for t in (tool_list or []) if t.get('type') in ('image', 'video')]
+        creator_tool_instances = [
+            fn for fn in (tool_service.get_tool(t.get('id', '')) for t in media_tool_jsons)
+            if fn is not None
+        ]
+        print(f"🔧 Creator tools: {[t.name for t in creator_tool_instances]}")
 
-        agent_names = [agent.name for agent in agents]
-        print('👇agent_names', agent_names)
-        last_agent = AgentManager.get_last_active_agent(
-            fixed_messages, agent_names)
-
-        print('👇last_agent', last_agent)
-
-        # 5. 创建智能体群组
-        swarm = create_swarm(
-            agents=agents,  # type: ignore
-            default_active_agent=last_agent if last_agent else agent_names[0]
+        # 6. 构建harness graph
+        graph = build_harness_graph(
+            planner_llm=planner_llm,
+            creator_llm=creator_llm,
+            planner_tools=planner_tool_instances,
+            creator_tools=creator_tool_instances,
+            websocket_service=send_to_websocket,
         )
 
-        # 6. 创建上下文
-        context = {
-            'canvas_id': canvas_id,
-            'session_id': session_id,
-            'tool_list': tool_list,
+        # 7. 构建初始state
+        initial_state: Dict[str, Any] = {
+            "messages": fixed_messages,
+            "canvas_id": canvas_id,
+            "session_id": session_id,
+            "tool_list": tool_list,
+            "system_prompt": system_prompt,
+            "use_planner": use_planner,
+            "quantity": 1,
+            "input_images": [],
+            "input_videos": [],
+            "input_audios": [],
+            "plan_validated": False,
+            "pending_tool_calls": [],
+            "approved_tool_calls": [],
+            "approval_given": False,
+            "retry_count": 0,
+            "hard_stop": False,
         }
 
-        # 7. 流处理
-        processor = StreamProcessor(
-            session_id, db_service, send_to_websocket)  # type: ignore
-        await processor.process_stream(swarm, fixed_messages, context)
+        # 8. 流处理
+        context = {"configurable": {"session_id": session_id, "canvas_id": canvas_id}}
+        processor = StreamProcessor(session_id, db_service, send_to_websocket)  # type: ignore
+        await processor.process_stream(graph, initial_state, context)
 
     except Exception as e:
         await _handle_error(e, session_id)
