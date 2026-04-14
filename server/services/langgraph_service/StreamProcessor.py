@@ -27,27 +27,25 @@ class StreamProcessor:
         # tokens, so the frontend state is unchanged and retry is safe.
         self.chunks_received: int = 0
 
-    async def process_stream(self, swarm: StateGraph, messages: List[Dict[str, Any]], context: Dict[str, Any]) -> None:
+    async def process_stream(self, graph: Any, initial_state: Dict[str, Any], context: Dict[str, Any]) -> None:
         """处理整个流式响应
 
         Args:
-            swarm: 智能体群组
-            messages: 消息列表（可能已截断，仅用于发送给模型）
-            context: 上下文信息
+            graph: 已编译的 StateGraph (build_harness_graph 的返回值)
+            initial_state: 完整的 HarnessState 初始值（含 messages 和所有 harness 字段）
+            context: LangGraph configurable 上下文
         """
         # 用 DB 中的实际条数确定起始索引，而非输入消息数量。
         # 输入消息可能因上下文截断而变短，若以其长度为基准会导致已有消息被重复写入。
         saved_messages = await self.db_service.get_chat_history(self.session_id)
         self.last_saved_message_index = len(saved_messages) - 1
-        self._langgraph_initial_count = len(messages)
+        self._langgraph_initial_count = len(initial_state.get("messages", []))
         self._new_responses_saved = 0
-        print(f"📝 DB 已有 {len(saved_messages)} 条消息，LangGraph 输入 {len(messages)} 条，新消息从索引 {self.last_saved_message_index + 1} 开始")
-
-        compiled_swarm = swarm.compile()
+        print(f"📝 DB 已有 {len(saved_messages)} 条消息，LangGraph 输入 {self._langgraph_initial_count} 条，新消息从索引 {self.last_saved_message_index + 1} 开始")
 
         try:
-            async for chunk in compiled_swarm.astream(
-                {"messages": messages},
+            async for chunk in graph.astream(
+                initial_state,
                 config=context,
                 stream_mode=["messages", "custom", 'values']
             ):
