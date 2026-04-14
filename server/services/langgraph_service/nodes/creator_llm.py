@@ -30,6 +30,7 @@ def _build_harness_context(state: HarnessState) -> str:
 def make_creator_llm_node(
     creator_llm: Any,
     creator_tools: List[BaseTool],
+    system_prompt: Optional[str] = None,
 ) -> Callable[[HarnessState], Dict[str, Any]]:
     """Return a node function that runs one creator LLM step."""
     bound_llm = creator_llm.bind_tools(creator_tools) if creator_tools else creator_llm
@@ -37,9 +38,13 @@ def make_creator_llm_node(
     async def creator_llm_node(state: HarnessState) -> Dict[str, Any]:
         messages = list(state.get("messages", []))
 
-        # Inject harness context as first system message
-        context_msg = SystemMessage(content=_build_harness_context(state))
-        augmented = [context_msg] + messages
+        # Build system messages: agent system prompt + harness context
+        system_messages = []
+        if system_prompt:
+            system_messages.append(SystemMessage(content=system_prompt))
+        system_messages.append(SystemMessage(content=_build_harness_context(state)))
+
+        augmented = system_messages + messages
 
         response = await bound_llm.ainvoke(augmented)
 

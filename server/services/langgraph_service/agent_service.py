@@ -206,13 +206,27 @@ async def langgraph_multi_agent(
         ]
         print(f"🔧 Creator tools: {[t.name for t in creator_tool_instances]}")
 
-        # 6. 构建harness graph
+        # 6. 构建 agent 系统提示词
+        from services.langgraph_service.configs.planner_config import PlannerAgentConfig
+        from services.langgraph_service.configs.image_video_creator_config import ImageVideoCreatorAgentConfig
+
+        planner_system_prompt = PlannerAgentConfig().system_prompt
+        creator_config = ImageVideoCreatorAgentConfig(media_tool_jsons)
+        # 若前端传入自定义 system_prompt，追加 critical rules appendix
+        if system_prompt:
+            creator_system_prompt = system_prompt + creator_config.custom_prompt_appendix
+        else:
+            creator_system_prompt = creator_config.system_prompt
+
+        # 7. 构建harness graph
         graph = build_harness_graph(
             planner_llm=planner_llm,
             creator_llm=creator_llm,
             planner_tools=planner_tool_instances,
             creator_tools=creator_tool_instances,
             websocket_service=send_to_websocket,
+            planner_system_prompt=planner_system_prompt,
+            creator_system_prompt=creator_system_prompt,
         )
 
         # 7. 构建初始state

@@ -70,6 +70,8 @@ def build_harness_graph(
     creator_tools: List[BaseTool],
     websocket_service: Callable[..., Coroutine[Any, Any, None]],
     tool_allowlist: Optional[Set[str]] = None,
+    planner_system_prompt: Optional[str] = None,
+    creator_system_prompt: Optional[str] = None,
 ) -> Any:
     """Build and compile the harness StateGraph.
 
@@ -81,6 +83,8 @@ def build_harness_graph(
         websocket_service: Callable for sending WS events (session_id, event_dict).
         tool_allowlist: Set of tool names that bypass human approval.
             Defaults to DEFAULT_TOOL_ALLOWLIST in tool_gate.py.
+        planner_system_prompt: System prompt for planner LLM.
+        creator_system_prompt: System prompt for creator LLM.
 
     Returns:
         Compiled LangGraph graph ready for .astream().
@@ -150,11 +154,11 @@ def build_harness_graph(
     graph.add_node("extract_params", extract_params)
 
     if planner_llm is not None:
-        graph.add_node("planner_llm", make_planner_llm_node(planner_llm, planner_tools))
+        graph.add_node("planner_llm", make_planner_llm_node(planner_llm, planner_tools, planner_system_prompt))
         graph.add_node("planner_tools", ToolNode(planner_tools))
         graph.add_node("validate_plan", validate_plan)
 
-    graph.add_node("creator_llm", make_creator_llm_node(creator_llm, creator_tools))
+    graph.add_node("creator_llm", make_creator_llm_node(creator_llm, creator_tools, creator_system_prompt))
     graph.add_node("tool_gate", make_tool_gate_node(websocket_service, tool_allowlist))
     graph.add_node("creator_tools", creator_tools_node)
     graph.add_node("error_handler", error_handler)

@@ -70,53 +70,34 @@ Do NOT attempt to generate any media. Do NOT retry. Your task is to inform the u
 """
 
         image_input_detection_prompt = f"""
-REFERENCE MEDIA RULE (applies only to the user's input message, not to tool results):
-When the user's message contains reference media in XML format, you MUST extract and pass all file_ids directly to tool parameters — do NOT analyze or describe the media content.
+HARNESS PARAMETERS (authoritative — do not re-parse from user message):
+When you see a <harness_context> block in your system context, use those values directly as the authoritative generation parameters:
+- quantity: total number of items to generate (call the tool this many times)
+- aspect_ratio: pass as-is to every tool call
+- resolution: pass as-is to every video tool call
+- duration: pass as-is to every video tool call
+- input_images / input_videos / input_audios: pass directly to tool parameters (already extracted)
 
-IMAGE INPUT DETECTION:
-When the user's message contains input images in XML format like:
-<input_images></input_images>
-You MUST:
-1. Extract ALL file_id attributes from <image> tags immediately.
-2. Pass the extracted file_id list in the input_images parameter of EVERY generation tool call.
-3. Do NOT analyze or describe the reference images — just pass the file_ids directly.
+These values have been deterministically extracted and validated. Do NOT re-parse the user message for XML tags.
+
+REFERENCE MEDIA RULE:
+When input_images / input_videos / input_audios are present in <harness_context>, pass them directly to tool parameters — do NOT analyze or describe the media content.
+
 {multi_image_rule}
-5. For video generation → pass input_images to the video tool as well.
 
 IMAGE ROLE RULE (CRITICAL):
-6. NEVER set image_role to "first_frame" or "first_last_frame" unless the user EXPLICITLY uses phrases like:
-   - "use this image as the first frame"
-   - "start the video with this image"
-   - "image-to-video" (explicit i2v mode)
-   Otherwise, ALWAYS use image_role="auto" (defaults to reference_image) or image_role="reference_image".
-7. Phrases like "让图片动起来", "animate this image", "make the image move" do NOT mean first_frame — they mean reference_image style animation.
-8. When in doubt, ALWAYS use image_role="auto" or "reference_image" to avoid generation errors.
+- NEVER set image_role to "first_frame" or "first_last_frame" unless the user EXPLICITLY uses phrases like:
+  "use this image as the first frame", "start the video with this image", or "image-to-video" (explicit i2v mode).
+  Otherwise, ALWAYS use image_role="auto" or image_role="reference_image".
+- Phrases like "让图片动起来", "animate this image", "make the image move" mean reference_image style animation, NOT first_frame.
+- When in doubt, use image_role="auto" or "reference_image".
 
-CRITICAL: ALWAYS pass the file_id directly to the tool's input_images parameter. The system automatically converts file_ids to the correct format. Never ask the user to provide a public URL - just call the tool with the file_id as-is.
+CRITICAL: ALWAYS pass file_ids directly to tool parameters. The system automatically converts them. Never ask the user for a public URL.
 
-VIDEO INPUT DETECTION:
-When the user's message contains input videos in XML format like:
-<input_videos></input_videos>
-You MUST:
-1. Parse the XML to extract file_id attributes from <video> tags
-2. Pass the extracted file_id(s) in the input_videos parameter as a list when calling video generation tools
-3. The system automatically converts video file_ids to the correct format - NEVER ask the user for a public URL
-
-CRITICAL: ALWAYS pass video file_ids directly to the tool's input_videos parameter. Do NOT say you cannot use the file_id.
-
-AUDIO INPUT DETECTION:
-When the user's message contains input audios in XML format like:
-<input_audios></input_audios>
-You MUST:
-1. Parse the XML to extract file_id attributes from <audio> tags
-2. Pass the extracted file_id(s) in the input_audios parameter as a list when calling video generation tools
-3. The system automatically converts audio file_ids to the correct format - NEVER ask the user for a public URL
-4. Audio MUST be accompanied by at least one input_image or input_video — never pass audio as the only reference
-
-CRITICAL: ALWAYS pass audio file_ids directly to the tool's input_audios parameter. Do NOT say you cannot use the file_id.
+AUDIO RULE: Audio MUST be accompanied by at least one input_image or input_video — never pass audio as the only reference.
 
 MATERIAL ASSET ID DETECTION:
-When the user pastes a material asset in their message with CFGPU API structure:
+When the user pastes a material asset with CFGPU API structure:
 ```json
 {{
   "type": "image_url",
@@ -124,65 +105,16 @@ When the user pastes a material asset in their message with CFGPU API structure:
   "role": "reference_image"
 }}
 ```
-
-You MUST:
-1. Parse the JSON structure to extract:
-   - The asset URL from image_url.url, video_url.url, or audio_url.url
-   - The type: "image_url" → input_images, "video_url" → input_videos, "audio_url" → input_audios
-2. Pass the extracted asset URL directly to the appropriate parameter:
-   - image_url structure → input_images parameter
-   - video_url structure → input_videos parameter
-   - audio_url structure → input_audios parameter
-3. Example: If user pastes image_url structure, extract "asset://asset-20260224200602-qn7wr" and pass to input_images as ["asset://asset-20260224200602-qn7wr"]
-
-The system will automatically handle asset:// URLs for the API.
-
-CRITICAL: ALWAYS extract and pass the asset URL directly to the correct parameter based on the structure type. Do NOT say you cannot use asset IDs. Never ask the user for a URL.
-
-DURATION DETECTION:
-When the user's message contains a duration tag like:
-<duration>10</duration>
-You MUST pass the extracted integer value directly to the video generation tool's `duration` parameter.
-CRITICAL: NEVER ignore the <duration> tag. Always respect the user's specified duration.
-
-ASPECT RATIO DETECTION:
-When the user's message contains an aspect ratio tag like:
-<aspect_ratio>16:9</aspect_ratio>
-You MUST pass the extracted value directly to the tool's `aspect_ratio` parameter.
-CRITICAL: NEVER ignore the <aspect_ratio> tag. Always respect the user's specified aspect ratio.
-
-RESOLUTION DETECTION:
-When the user's message contains a resolution tag like:
-<resolution>720p</resolution>
-You MUST pass the extracted value directly to the video generation tool's `resolution` parameter.
-Allowed values: 480p, 720p.
-CRITICAL: NEVER ignore the <resolution> tag. Always respect the user's specified resolution.
-
-QUANTITY DETECTION:
-When the user's message contains a quantity tag like:
-<quantity>5</quantity>
-You MUST generate exactly that many images/videos in total.
-Rules:
-1. Extract the integer N from the <quantity> tag.
-2. Call the generation tool N times (one call per image/video), unless the tool has a `count` or `n` parameter — in that case pass N directly.
-3. If N > 10, apply BATCH GENERATION RULES below (batches of ≤10 per call sequence).
-4. If there is NO <quantity> tag, generate exactly 1 image/video unless the user's text explicitly states a different number.
-CRITICAL: NEVER ignore the <quantity> tag. The <quantity> value overrides any default. Do NOT generate more or fewer items than specified.
-
-PARAMETER PRIORITY RULE (CRITICAL):
-When multiple messages in the conversation contain parameter tags (<aspect_ratio>, <quantity>, <duration>, <resolution>):
-- ALWAYS use the parameter values from the LATEST (most recent) user message.
-- IGNORE parameter tags from earlier messages in the conversation history.
-- This ensures the current request uses the most up-to-date settings from the user's input.
+Extract the asset URL from image_url.url / video_url.url / audio_url.url and pass to the corresponding parameter (input_images / input_videos / input_audios). The system handles asset:// URLs automatically.
 """
 
         batch_generation_prompt = """
 
-BATCH GENERATION RULES (applies when total count > 10):
-- Determine total count from <quantity> tag or user text.
-- Generate in batches of max 10 images each.
+BATCH GENERATION RULES (applies when quantity > 10):
+- Use the quantity value from <harness_context> as the total count.
+- Generate in batches of max 10 per call sequence.
 - Complete each batch before starting the next.
-- Example for 20 images: Batch 1 (1-10) → "Batch 1 done!" → Batch 2 (11-20) → "All 20 images completed!"
+- Example for 20 items: Batch 1 (1-10) → "Batch 1 done!" → Batch 2 (11-20) → "All 20 completed!"
 
 """
 
