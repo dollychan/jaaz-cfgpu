@@ -4,9 +4,7 @@ from langchain_core.tools import tool, InjectedToolCallId  # type: ignore
 from langchain_core.runnables import RunnableConfig
 from services.jaaz_service import JaazService
 from tools.video_generation.video_canvas_utils import send_video_start_notification, process_video_result
-from services.tool_confirmation_manager import tool_confirmation_manager
-from services.websocket_service import send_to_websocket
-import json
+
 
 class GenerateVideoByVeo3FastInputSchema(BaseModel):
     prompt: str = Field(
@@ -24,7 +22,8 @@ async def generate_video_by_veo3_fast_jaaz(
     tool_call_id: Annotated[str, InjectedToolCallId],
 ) -> str:
     """
-    Generate a video using Veo3 Fast model via Jaaz service
+    Generate a video using Veo3 Fast model via Jaaz service.
+    Approval is handled upstream by tool_gate before this function is called.
     """
     print(f'🛠️ Veo3 Fast Video Generation tool_call_id: {tool_call_id}')
     ctx = config.get('configurable', {})
@@ -32,38 +31,14 @@ async def generate_video_by_veo3_fast_jaaz(
     session_id = ctx.get('session_id', '')
     print(f'🛠️ canvas_id {canvas_id} session_id {session_id}')
 
-        # 检查是否需要确认
-    arguments = {
-        'prompt': prompt,
-    }
-
-    # 发送确认请求
-    await send_to_websocket(session_id, {
-        'type': 'tool_call_pending_confirmation',
-        'id': tool_call_id,
-        'name': 'generate_video_by_veo3_fast_jaaz',
-        'arguments': json.dumps(arguments)
-    })
-
-    # 等待确认
-    confirmed = await tool_confirmation_manager.request_confirmation(
-        tool_call_id, session_id, 'generate_video_by_veo3_fast_jaaz', arguments
-    )
-
-    if not confirmed:
-        return "Video generation cancelled by user."
-
-    # Inject the tool call id into the context
     ctx['tool_call_id'] = tool_call_id
 
     try:
-        # Send start notification
-        await send_video_start_notification(
+        send_video_start_notification(
             session_id,
-            f"Starting Veo3 Fast video generation..."
+            "Starting Veo3 Fast video generation..."
         )
 
-        # Create Jaaz service and generate video
         jaaz_service = JaazService()
         result = await jaaz_service.generate_video(
             prompt=prompt,
@@ -74,7 +49,6 @@ async def generate_video_by_veo3_fast_jaaz(
         if not video_url:
             raise Exception("No video URL returned from generation")
 
-        # Process video result (save, update canvas, notify)
         return await process_video_result(
             video_url=video_url,
             session_id=session_id,
@@ -87,5 +61,4 @@ async def generate_video_by_veo3_fast_jaaz(
         raise e
 
 
-# Export the tool for easy import
 __all__ = ["generate_video_by_veo3_fast_jaaz"]

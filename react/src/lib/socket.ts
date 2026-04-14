@@ -137,6 +137,15 @@ export class SocketIOManager {
       case ISocket.SessionEventType.ToolCallResult:
         eventBus.emit('Socket::Session::ToolCallResult', data)
         break
+      case ISocket.SessionEventType.ToolApprovalRequest:
+        eventBus.emit('Socket::Session::ToolApprovalRequest', data)
+        break
+      case ISocket.SessionEventType.ToolBatchApproved:
+        eventBus.emit('Socket::Session::ToolBatchApproved', data)
+        break
+      case ISocket.SessionEventType.ToolBatchRejected:
+        eventBus.emit('Socket::Session::ToolBatchRejected', data)
+        break
       default:
         console.log('⚠️ Unknown session update type:', type)
     }

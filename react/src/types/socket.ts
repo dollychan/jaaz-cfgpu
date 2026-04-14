@@ -17,6 +17,9 @@ export enum SessionEventType {
   ToolCallPendingConfirmation = 'tool_call_pending_confirmation',
   ToolCallConfirmed = 'tool_call_confirmed',
   ToolCallCancelled = 'tool_call_cancelled',
+  ToolApprovalRequest = 'tool_approval_request',
+  ToolBatchApproved = 'tool_batch_approved',
+  ToolBatchRejected = 'tool_batch_rejected',
 }
 
 export interface SessionBaseEvent {
@@ -96,6 +99,22 @@ export interface SessionToolCallCancelledEvent extends SessionBaseEvent {
   id: string
 }
 
+export interface SessionToolApprovalRequestEvent extends SessionBaseEvent {
+  type: SessionEventType.ToolApprovalRequest
+  batch_id: string
+  tool_calls: Array<{ id: string; name: string; arguments: Record<string, any> }>
+}
+
+export interface SessionToolBatchApprovedEvent extends SessionBaseEvent {
+  type: SessionEventType.ToolBatchApproved
+  batch_id: string
+}
+
+export interface SessionToolBatchRejectedEvent extends SessionBaseEvent {
+  type: SessionEventType.ToolBatchRejected
+  batch_id: string
+}
+
 export type SessionUpdateEvent =
   | SessionDeltaEvent
   | SessionToolCallEvent
@@ -111,3 +130,6 @@ export type SessionUpdateEvent =
   | SessionToolCallPendingConfirmationEvent
   | SessionToolCallConfirmedEvent
   | SessionToolCallCancelledEvent
+  | SessionToolApprovalRequestEvent
+  | SessionToolBatchApprovedEvent
+  | SessionToolBatchRejectedEvent

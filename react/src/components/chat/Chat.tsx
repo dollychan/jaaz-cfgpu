@@ -123,6 +123,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     pendingToolConfirmationsRef.current = pendingToolConfirmations
   }, [pendingToolConfirmations])
 
+  type PendingBatchApproval = {
+    batch_id: string
+    tool_calls: Array<{ id: string; name: string; arguments: Record<string, any> }>
+  }
+  const [pendingBatchApprovals, setPendingBatchApprovals] = useState<PendingBatchApproval[]>([])
+
   const scrollRef = useRef<HTMLDivElement>(null)
   const isAtBottomRef = useRef(false)
 
@@ -353,6 +359,61 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
           })
         })
       )
+    },
+    [sessionId]
+  )
+
+  const handleToolApprovalRequest = useCallback(
+    (data: TEvents['Socket::Session::ToolApprovalRequest']) => {
+      if (data.session_id && data.session_id !== sessionId) return
+      setPendingBatchApprovals((prev) => [
+        ...prev,
+        { batch_id: data.batch_id, tool_calls: data.tool_calls },
+      ])
+      // Auto-expand all tool calls in the batch so the user sees them
+      setExpandingToolCalls((prev) => {
+        const newIds = data.tool_calls
+          .map((tc) => tc.id)
+          .filter((id) => !prev.includes(id))
+        return [...prev, ...newIds]
+      })
+    },
+    [sessionId]
+  )
+
+  const handleToolBatchApproved = useCallback(
+    (data: TEvents['Socket::Session::ToolBatchApproved']) => {
+      if (data.session_id && data.session_id !== sessionId) return
+      setPendingBatchApprovals((prev) =>
+        prev.filter((b) => b.batch_id !== data.batch_id)
+      )
+    },
+    [sessionId]
+  )
+
+  const handleToolBatchRejected = useCallback(
+    (data: TEvents['Socket::Session::ToolBatchRejected']) => {
+      if (data.session_id && data.session_id !== sessionId) return
+      setPendingBatchApprovals((prev) => {
+        const batch = prev.find((b) => b.batch_id === data.batch_id)
+        if (batch) {
+          // Mark the rejected tool calls as cancelled in messages
+          setMessages(
+            produce((msgs) => {
+              msgs.forEach((msg) => {
+                if (msg.role === 'assistant' && msg.tool_calls) {
+                  msg.tool_calls.forEach((tc) => {
+                    if (batch.tool_calls.some((btc) => btc.id === tc.id)) {
+                      tc.result = '工具调用已取消'
+                    }
+                  })
+                }
+              })
+            })
+          )
+        }
+        return prev.filter((b) => b.batch_id !== data.batch_id)
+      })
     },
     [sessionId]
   )
@@ -632,6 +693,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     eventBus.on('Socket::Session::Done', handleDone)
     eventBus.on('Socket::Session::Error', handleError)
     eventBus.on('Socket::Session::Info', handleInfo)
+    eventBus.on('Socket::Session::ToolApprovalRequest', handleToolApprovalRequest)
+    eventBus.on('Socket::Session::ToolBatchApproved', handleToolBatchApproved)
+    eventBus.on('Socket::Session::ToolBatchRejected', handleToolBatchRejected)
     return () => {
       eventBus.off('Socket::Session::Delta', handleDelta)
       eventBus.off('Socket::Session::ToolCall', handleToolCall)
@@ -657,6 +721,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
       eventBus.off('Socket::Session::Done', handleDone)
       eventBus.off('Socket::Session::Error', handleError)
       eventBus.off('Socket::Session::Info', handleInfo)
+      eventBus.off('Socket::Session::ToolApprovalRequest', handleToolApprovalRequest)
+      eventBus.off('Socket::Session::ToolBatchApproved', handleToolBatchApproved)
+      eventBus.off('Socket::Session::ToolBatchRejected', handleToolBatchRejected)
     }
   }, [
     handleDelta,
@@ -671,6 +738,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     handleDone,
     handleError,
     handleInfo,
+    handleToolApprovalRequest,
+    handleToolBatchApproved,
+    handleToolBatchRejected,
   ])
 
   const initChat = useCallback(async () => {
@@ -854,6 +924,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                     message.tool_calls &&
                     message.tool_calls.at(-1)?.function.name != 'finish' &&
                     message.tool_calls.map((toolCall, i) => {
+                      // Check if this tool call belongs to a pending batch approval
+                      const pendingBatch = pendingBatchApprovals.find((b) =>
+                        b.tool_calls.some((btc) => btc.id === toolCall.id)
+                      )
+                      // Also check legacy per-call confirmations
+                      const needsLegacyConfirmation = pendingToolConfirmations.includes(toolCall.id)
+
                       return (
                         <ToolCallTag
                           key={toolCall.id}
@@ -871,36 +948,58 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                               ])
                             }
                           }}
-                          requiresConfirmation={pendingToolConfirmations.includes(
-                            toolCall.id
-                          )}
+                          requiresConfirmation={!!pendingBatch || needsLegacyConfirmation}
                           onConfirm={() => {
-                            // 发送确认事件到后端
-                            fetch('/api/tool_confirmation', {
-                              method: 'POST',
-                              headers: {
-                                'Content-Type': 'application/json',
-                              },
-                              body: JSON.stringify({
-                                session_id: sessionId,
-                                tool_call_id: toolCall.id,
-                                confirmed: true,
-                              }),
-                            })
+                            if (pendingBatch) {
+                              // Batch approval: approve the whole batch
+                              fetch('/api/batch_tool_approval', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  session_id: sessionId,
+                                  batch_id: pendingBatch.batch_id,
+                                  approved: true,
+                                  tool_calls: pendingBatch.tool_calls,
+                                }),
+                              })
+                            } else {
+                              // Legacy per-call confirmation
+                              fetch('/api/tool_confirmation', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  session_id: sessionId,
+                                  tool_call_id: toolCall.id,
+                                  confirmed: true,
+                                }),
+                              })
+                            }
                           }}
                           onCancel={() => {
-                            // 发送取消事件到后端
-                            fetch('/api/tool_confirmation', {
-                              method: 'POST',
-                              headers: {
-                                'Content-Type': 'application/json',
-                              },
-                              body: JSON.stringify({
-                                session_id: sessionId,
-                                tool_call_id: toolCall.id,
-                                confirmed: false,
-                              }),
-                            })
+                            if (pendingBatch) {
+                              // Batch rejection: reject the whole batch
+                              fetch('/api/batch_tool_approval', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  session_id: sessionId,
+                                  batch_id: pendingBatch.batch_id,
+                                  approved: false,
+                                  tool_calls: [],
+                                }),
+                              })
+                            } else {
+                              // Legacy per-call cancellation
+                              fetch('/api/tool_confirmation', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  session_id: sessionId,
+                                  tool_call_id: toolCall.id,
+                                  confirmed: false,
+                                }),
+                              })
+                            }
                           }}
                         />
                       )
