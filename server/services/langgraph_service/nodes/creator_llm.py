@@ -92,9 +92,11 @@ def _strip_planner_messages(messages: list) -> list:
                 print(f"🧹 creator_llm: dropping dangling tool_calls with no result: {dropped}")
             if live:
                 pass2.append(msg.model_copy(update={"tool_calls": live}))
-            elif getattr(msg, "content", None):
-                pass2.append(msg.model_copy(update={"tool_calls": []}))
-            # else: drop entirely (no content, no valid tool_calls)
+            else:
+                # All tool_calls were dangling — drop the entire message including any text
+                # content. Keeping a text-only AIMessage would leave the history ending on
+                # an AI turn, causing the next LLM call to return an empty response.
+                print(f"🧹 creator_llm: dropping entire AIMessage (all tool_calls dangling)")
         else:
             pass2.append(msg)
 
