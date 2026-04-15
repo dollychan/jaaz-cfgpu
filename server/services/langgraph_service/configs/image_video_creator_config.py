@@ -148,6 +148,12 @@ Your next action after those two must be a plain text message to the user.
 
         completion_prompt = """
 
+TOOL PARAMETER MODIFICATION RULE:
+- Tool call parameters may have been modified by the user in the approval UI before execution.
+- The tool result (ToolMessage) reflects what was ACTUALLY generated with the final parameters.
+- When writing your summary or deciding next steps, always use the ToolMessage content as the
+  source of truth — NOT the original arguments you passed to the tool.
+
 TASK COMPLETION RULES — READ CAREFULLY:
 
 EXECUTION PLAN MODE (when "Execution plan from planner:" is present):
@@ -194,7 +200,7 @@ If any steps were skipped due to errors (see ERROR CLASSIFICATION RULES above):
             + available_tools_prompt      # prevent hallucinated tool names OR report no-tools error
             + batch_generation_prompt     # batch rules for large quantities
             + error_handling_prompt       # content policy / error → stop, no retry
-            + completion_prompt           # task done → plain text reply, no more tools
+            + completion_prompt           # tool param modification rule + task done → plain text reply
         )
 
         # 图像设计智能体不需要切换到其他智能体

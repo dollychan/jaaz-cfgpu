@@ -105,7 +105,26 @@ def build_harness_graph(
         """Execute approved tool calls and classify any errors."""
         approved = state.get("approved_tool_calls", [])
         if not approved:
-            return {"pending_tool_calls": [], "approved_tool_calls": [], "error_context": None}
+            # Tool calls were rejected by the user. Inject a ToolMessage for each
+            # pending call so the history stays valid (AIMessage tool_calls must always
+            # be answered). Without this, the dangling AIMessage causes the next
+            # creator_llm invocation to receive an empty response.
+            pending = state.get("pending_tool_calls", [])
+            rejection_msgs = [
+                ToolMessage(
+                    content="Tool call rejected by user.",
+                    tool_call_id=tc["id"],
+                    name=tc["name"],
+                )
+                for tc in pending
+                if tc.get("id") and tc.get("name")
+            ]
+            return {
+                "messages": rejection_msgs,
+                "pending_tool_calls": [],
+                "approved_tool_calls": [],
+                "error_context": None,
+            }
 
         messages = list(state.get("messages", []))
         last_ai = messages[-1] if messages else None
