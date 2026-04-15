@@ -26,11 +26,20 @@ def _route_after_extract(state: HarnessState) -> str:
 
 
 def _route_planner(state: HarnessState) -> str:
-    """After planner LLM: go to tool execution or validate (if no tool calls)."""
+    """After planner LLM: go to tool execution or validate (if no tool calls).
+
+    Only routes to planner_tools if the tool_calls contain a known planner tool
+    (write_plan). Hallucinated tool names (e.g. transfer_to_*) are ignored so
+    the graph falls through to validate_plan instead of crashing ToolNode.
+    """
     messages = state.get("messages", [])
     last = messages[-1] if messages else None
-    if last and getattr(last, "tool_calls", None):
-        return "planner_tools"
+    if last:
+        tool_calls = getattr(last, "tool_calls", None)
+        if tool_calls:
+            known = {"write_plan"}
+            if any(tc.get("name") in known for tc in tool_calls):
+                return "planner_tools"
     return "validate_plan"
 
 
