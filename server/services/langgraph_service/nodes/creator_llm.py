@@ -61,7 +61,7 @@ def _strip_planner_messages(messages: list) -> list:
         for m in filtered
         if getattr(m, "tool_call_id", None)
     }
-    result = []
+    pass2 = []
     for msg in filtered:
         tc_list = getattr(msg, "tool_calls", None) or []
         if tc_list:
@@ -70,10 +70,34 @@ def _strip_planner_messages(messages: list) -> list:
                 dropped = [tc["name"] for tc in tc_list if tc.get("id") not in answered_tc_ids]
                 print(f"🧹 creator_llm: dropping dangling tool_calls with no result: {dropped}")
             if live:
-                result.append(msg.model_copy(update={"tool_calls": live}))
+                pass2.append(msg.model_copy(update={"tool_calls": live}))
             elif getattr(msg, "content", None):
-                result.append(msg.model_copy(update={"tool_calls": []}))
+                pass2.append(msg.model_copy(update={"tool_calls": []}))
             # else: drop entirely (no content, no valid tool_calls)
+        else:
+            pass2.append(msg)
+
+    # Pass 3: merge consecutive AIMessages — strict OpenAI-compatible providers
+    # reject histories with two AI messages in a row (happens after write_plan strip
+    # leaves a planner text message immediately before a creator tool_call message).
+    from langchain_core.messages import AIMessage as _AIMessage
+    result = []
+    for msg in pass2:
+        if result and isinstance(result[-1], _AIMessage) and isinstance(msg, _AIMessage):
+            prev = result[-1]
+            prev_tc = getattr(prev, "tool_calls", None) or []
+            cur_tc = getattr(msg, "tool_calls", None) or []
+            if not prev_tc:
+                # Previous has no tool_calls — safe to drop it and keep current
+                print(f"🧹 creator_llm: merging consecutive AI messages (dropping text-only predecessor)")
+                result[-1] = msg
+            elif not cur_tc:
+                # Current has no tool_calls — drop current, keep previous
+                print(f"🧹 creator_llm: merging consecutive AI messages (dropping text-only successor)")
+                # keep result[-1] as-is
+            else:
+                # Both have tool_calls — keep both (unusual, leave for API to handle)
+                result.append(msg)
         else:
             result.append(msg)
     return result
