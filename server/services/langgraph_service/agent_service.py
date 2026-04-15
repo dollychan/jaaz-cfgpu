@@ -250,7 +250,7 @@ async def langgraph_multi_agent(
         }
 
         # 8. 流处理
-        context = {"configurable": {"session_id": session_id, "canvas_id": canvas_id}}
+        context = {"configurable": {"session_id": session_id, "canvas_id": canvas_id, "tool_list": tool_list}}
         processor = StreamProcessor(session_id, db_service, send_to_websocket)  # type: ignore
         await processor.process_stream(graph, initial_state, context)
 
