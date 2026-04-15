@@ -60,16 +60,19 @@ def _strip_planner_messages(messages: list) -> list:
             continue
         filtered.append(msg)
 
-    # Inject plan as a HumanMessage after the first user message
+    # Append plan to the first HumanMessage content (avoids consecutive human messages)
     if plan_content and filtered:
-        plan_msg = HumanMessage(content=f"Execution plan from planner:\n{plan_content}\n\nPlease execute this plan step by step.")
-        insert_at = 1
+        plan_suffix = f"\n\nExecution plan from planner:\n{plan_content}\n\nPlease execute this plan step by step."
         for i, m in enumerate(filtered):
             if type(m).__name__ in ("HumanMessage", "human"):
-                insert_at = i + 1
+                existing = getattr(m, "content", "")
+                if isinstance(existing, str):
+                    filtered[i] = m.model_copy(update={"content": existing + plan_suffix})
+                elif isinstance(existing, list):
+                    # mixed content (text + images) — append as new text block
+                    filtered[i] = m.model_copy(update={"content": existing + [{"type": "text", "text": plan_suffix}]})
+                print(f"📋 creator_llm: appended plan to first HumanMessage")
                 break
-        filtered = filtered[:insert_at] + [plan_msg] + filtered[insert_at:]
-        print(f"📋 creator_llm: injected plan content into context")
 
     # Pass 2: remove dangling tool_calls (AIMessage with tool_calls but no following ToolMessage)
     answered_tc_ids: set = {
@@ -93,10 +96,9 @@ def _strip_planner_messages(messages: list) -> list:
         else:
             pass2.append(msg)
 
-    # Pass 3: merge consecutive AIMessages — strict OpenAI-compatible providers
-    # reject histories with two AI messages in a row (happens after write_plan strip
-    # leaves a planner text message immediately before a creator tool_call message).
-    from langchain_core.messages import AIMessage as _AIMessage
+    # Pass 3: merge consecutive same-role messages — strict OpenAI-compatible providers
+    # reject histories with two AI (or two Human) messages in a row.
+    from langchain_core.messages import AIMessage as _AIMessage, HumanMessage as _HumanMessage
     result = []
     for msg in pass2:
         if result and isinstance(result[-1], _AIMessage) and isinstance(msg, _AIMessage):
@@ -104,15 +106,21 @@ def _strip_planner_messages(messages: list) -> list:
             prev_tc = getattr(prev, "tool_calls", None) or []
             cur_tc = getattr(msg, "tool_calls", None) or []
             if not prev_tc:
-                # Previous has no tool_calls — safe to drop it and keep current
                 print(f"🧹 creator_llm: merging consecutive AI messages (dropping text-only predecessor)")
                 result[-1] = msg
             elif not cur_tc:
-                # Current has no tool_calls — drop current, keep previous
                 print(f"🧹 creator_llm: merging consecutive AI messages (dropping text-only successor)")
-                # keep result[-1] as-is
             else:
-                # Both have tool_calls — keep both (unusual, leave for API to handle)
+                result.append(msg)
+        elif result and isinstance(result[-1], _HumanMessage) and isinstance(msg, _HumanMessage):
+            # Merge consecutive human messages by appending content
+            prev = result[-1]
+            prev_content = getattr(prev, "content", "")
+            cur_content = getattr(msg, "content", "")
+            if isinstance(prev_content, str) and isinstance(cur_content, str):
+                print(f"🧹 creator_llm: merging consecutive Human messages")
+                result[-1] = prev.model_copy(update={"content": prev_content + "\n" + cur_content})
+            else:
                 result.append(msg)
         else:
             result.append(msg)
