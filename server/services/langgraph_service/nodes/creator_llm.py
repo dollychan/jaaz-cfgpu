@@ -60,19 +60,21 @@ def _strip_planner_messages(messages: list) -> list:
             continue
         filtered.append(msg)
 
-    # Append plan to the first HumanMessage content (avoids consecutive human messages)
+    # Append plan to the last HumanMessage content (avoids consecutive human messages)
     if plan_content and filtered:
         plan_suffix = f"\n\nExecution plan from planner:\n{plan_content}\n\nPlease execute this plan step by step."
+        last_human_idx = None
         for i, m in enumerate(filtered):
             if type(m).__name__ in ("HumanMessage", "human"):
-                existing = getattr(m, "content", "")
-                if isinstance(existing, str):
-                    filtered[i] = m.model_copy(update={"content": existing + plan_suffix})
-                elif isinstance(existing, list):
-                    # mixed content (text + images) — append as new text block
-                    filtered[i] = m.model_copy(update={"content": existing + [{"type": "text", "text": plan_suffix}]})
-                print(f"📋 creator_llm: appended plan to first HumanMessage")
-                break
+                last_human_idx = i
+        if last_human_idx is not None:
+            m = filtered[last_human_idx]
+            existing = getattr(m, "content", "")
+            if isinstance(existing, str):
+                filtered[last_human_idx] = m.model_copy(update={"content": existing + plan_suffix})
+            elif isinstance(existing, list):
+                filtered[last_human_idx] = m.model_copy(update={"content": existing + [{"type": "text", "text": plan_suffix}]})
+            print(f"📋 creator_llm: appended plan to last HumanMessage (idx={last_human_idx})")
 
     # Pass 2: remove dangling tool_calls (AIMessage with tool_calls but no following ToolMessage)
     answered_tc_ids: set = {
