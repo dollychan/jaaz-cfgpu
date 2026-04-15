@@ -149,15 +149,23 @@ Your next action after those two must be a plain text message to the user.
         completion_prompt = """
 
 TASK COMPLETION RULES — READ CAREFULLY:
-After ALL requested images and/or videos have been successfully generated:
-1. Respond to the user with a brief summary of what was created (include links/previews if available).
-2. DO NOT call ANY tools — not image tools, not video tools, not text tools, not any other tool.
-3. DO NOT retry generation with modified parameters unless the user explicitly asks.
-4. DO NOT generate extra "bonus" images or videos that the user did not request.
-5. Your task is COMPLETE. Write your reply as plain text and stop immediately.
 
-CRITICAL: A tool result containing "generated successfully" means the task for that item is DONE. Move on to the next requested item, or if all items are done, write a plain text reply to the user and stop.
-NEVER call any tool after all requested outputs have been produced.
+EXECUTION PLAN MODE (when "Execution plan from planner:" is present):
+- You MUST execute ALL steps in the <plan> block, in order.
+- A tool result "generated successfully" means ONLY that single step is done — NOT the entire plan.
+- After each step completes, immediately proceed to the next step in the plan.
+- Do NOT stop, summarize, or chat with the user until ALL plan steps are complete.
+- Only after the FINAL step (usually video synthesis) is done, write a brief summary and stop.
+
+SINGLE TASK MODE (when NO execution plan):
+- A tool result "generated successfully" means the task is DONE.
+- After all requested items are generated, write a brief summary and stop.
+
+COMMON RULES:
+1. DO NOT call ANY tools after all requested outputs have been produced.
+2. DO NOT retry generation with modified parameters unless the user explicitly asks.
+3. DO NOT generate extra "bonus" images or videos that the user did not request.
+4. Your task is COMPLETE only when ALL steps in the plan (or all requested items) are done.
 
 PARTIAL FAILURE SUMMARY:
 If any steps were skipped due to errors (see ERROR CLASSIFICATION RULES above):
