@@ -31,31 +31,52 @@ _PLANNER_TOOL_NAMES = {"write_plan"}
 
 
 def _strip_planner_messages(messages: list) -> list:
-    """Remove write_plan tool calls and their ToolMessage results.
+    """Remove write_plan tool calls and their ToolMessage results, and remove
+    any dangling tool_calls at the end of history that have no ToolMessage result.
 
-    Strict OpenAI-compatible providers reject message histories that reference
-    tools not in the current tool list.  The creator LLM only knows about media
-    tools, so write_plan exchanges must be stripped before invoking it.
+    Strict OpenAI-compatible providers reject message histories that:
+    1. Reference tools not in the current tool list (write_plan)
+    2. End with an AIMessage that has unanswered tool_calls (no ToolMessage follows)
     """
+    # Pass 1: remove write_plan calls and their results
     planner_tc_ids: set = set()
     filtered = []
     for msg in messages:
-        # Collect write_plan tool_call ids from AIMessages
         tc_list = getattr(msg, "tool_calls", None) or []
         planner_ids = {tc["id"] for tc in tc_list if tc.get("name") in _PLANNER_TOOL_NAMES}
         if planner_ids:
             planner_tc_ids.update(planner_ids)
             remaining = [tc for tc in tc_list if tc.get("name") not in _PLANNER_TOOL_NAMES]
-            if remaining or (getattr(msg, "content", None)):
+            if remaining or getattr(msg, "content", None):
                 filtered.append(msg.model_copy(update={"tool_calls": remaining}))
-            # Drop entirely if only write_plan calls and no content
             continue
-        # Drop ToolMessages that are write_plan results
         tc_id = getattr(msg, "tool_call_id", None)
         if tc_id and tc_id in planner_tc_ids:
             continue
         filtered.append(msg)
-    return filtered
+
+    # Pass 2: remove dangling tool_calls (AIMessage with tool_calls but no following ToolMessage)
+    answered_tc_ids: set = {
+        getattr(m, "tool_call_id", None)
+        for m in filtered
+        if getattr(m, "tool_call_id", None)
+    }
+    result = []
+    for msg in filtered:
+        tc_list = getattr(msg, "tool_calls", None) or []
+        if tc_list:
+            live = [tc for tc in tc_list if tc.get("id") in answered_tc_ids]
+            if live != tc_list:
+                dropped = [tc["name"] for tc in tc_list if tc.get("id") not in answered_tc_ids]
+                print(f"🧹 creator_llm: dropping dangling tool_calls with no result: {dropped}")
+            if live:
+                result.append(msg.model_copy(update={"tool_calls": live}))
+            elif getattr(msg, "content", None):
+                result.append(msg.model_copy(update={"tool_calls": []}))
+            # else: drop entirely (no content, no valid tool_calls)
+        else:
+            result.append(msg)
+    return result
 
 
 def make_creator_llm_node(
