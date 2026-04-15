@@ -133,12 +133,17 @@ def make_creator_llm_node(
 
         response = await bound_llm.ainvoke(augmented)
 
-        # Extract tool_calls for routing
+        # Extract valid tool_calls (filter phantom entries with empty name/id)
         tool_calls = getattr(response, "tool_calls", []) or []
+        valid_tool_calls = [tc for tc in tool_calls if tc.get("name") and tc.get("id")]
+        phantom_count = len(tool_calls) - len(valid_tool_calls)
+        if phantom_count:
+            print(f"🧹 creator_llm: dropping {phantom_count} phantom tool_call(s) with empty name/id")
+            response = response.model_copy(update={"tool_calls": valid_tool_calls})
+
         pending = [
             {"id": tc["id"], "name": tc["name"], "args": tc["args"]}
-            for tc in tool_calls
-            if tc.get("name")
+            for tc in valid_tool_calls
         ]
 
         return {

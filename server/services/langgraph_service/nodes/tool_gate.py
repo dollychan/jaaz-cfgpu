@@ -29,8 +29,8 @@ DEFAULT_TOOL_ALLOWLIST: Set[str] = {
     "generate_video_by_seedance_v1_pro_volces",
     "generate_video_by_seedance_v1_lite_t2v",
     "generate_video_by_seedance_v1_lite_i2v",
-    "generate_video_by_cfgpu_seedance_2_0",
-    "generate_video_by_cfgpu_seedance_2_0_fast",
+   # "generate_video_by_cfgpu_seedance_2_0",
+   # "generate_video_by_cfgpu_seedance_2_0_fast",
     "generate_video_by_kling_v2_jaaz",
     "generate_video_by_hailuo_02_jaaz",
     # generate_video_by_veo3_fast_jaaz intentionally NOT here → requires approval
