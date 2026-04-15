@@ -67,7 +67,16 @@ def make_creator_llm_node(
     bound_llm = creator_llm.bind_tools(creator_tools) if creator_tools else creator_llm
 
     async def creator_llm_node(state: HarnessState) -> Dict[str, Any]:
-        messages = _strip_planner_messages(list(state.get("messages", [])))
+        raw_messages = list(state.get("messages", []))
+        messages = _strip_planner_messages(raw_messages)
+
+        print(f"🎨 creator_llm: {len(raw_messages)} raw msgs → {len(messages)} after strip")
+        for i, m in enumerate(messages):
+            tc = getattr(m, "tool_calls", None)
+            tc_id = getattr(m, "tool_call_id", None)
+            role = getattr(m, "type", type(m).__name__)
+            content_preview = str(getattr(m, "content", ""))[:80]
+            print(f"  [{i}] {role} | tc={[t.get('name') for t in (tc or [])] if tc else None} | tc_id={tc_id} | {content_preview!r}")
 
         # Build system messages: agent system prompt + harness context
         system_messages = []
