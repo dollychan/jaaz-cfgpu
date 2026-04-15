@@ -13,13 +13,14 @@ import SingleChoicePrompt from '../SingleChoicePrompt'
 import WritePlanToolCall from './WritePlanToolcall'
 import ToolCallContentV2 from './ToolCallContent'
 import { useTranslation } from 'react-i18next'
+import { useState, useEffect } from 'react'
 
 type ToolCallTagProps = {
   toolCall: ToolCall
   isExpanded: boolean
   onToggleExpand: () => void
   requiresConfirmation?: boolean
-  onConfirm?: () => void
+  onConfirm?: (editedArgs?: Record<string, any>) => void
   onCancel?: () => void
 }
 
@@ -49,26 +50,49 @@ const ToolCallTag: React.FC<ToolCallTagProps> = ({
 
   const needsConfirmation = requiresConfirmation
 
-  let parsedArgs = null
+  let parsedArgs: Record<string, any> | null = null
   try {
     parsedArgs = JSON.parse(inputs)
   } catch (error) {
-    console.error('Error parsing args:', error, 'Raw input:', inputs)
-    // 尝试清理输入字符串，移除可能的额外内容
     try {
       const cleanedInput = inputs.trim()
       const jsonEndIndex = cleanedInput.lastIndexOf('}')
       if (jsonEndIndex > 0) {
-        const jsonPart = cleanedInput.substring(0, jsonEndIndex + 1)
-        parsedArgs = JSON.parse(jsonPart)
-        console.log('Successfully parsed cleaned JSON:', jsonPart)
+        parsedArgs = JSON.parse(cleanedInput.substring(0, jsonEndIndex + 1))
       }
-    } catch (cleanError) {
-      console.error('Failed to parse even after cleaning:', cleanError)
+    } catch (_) {}
+  }
+
+  // Editable state for confirmation mode — initialised from parsedArgs
+  const [editedArgs, setEditedArgs] = useState<Record<string, string>>({})
+  useEffect(() => {
+    if (needsConfirmation && parsedArgs) {
+      const initial: Record<string, string> = {}
+      for (const [k, v] of Object.entries(parsedArgs)) {
+        initial[k] = typeof v === 'object' ? JSON.stringify(v, null, 2) : String(v)
+      }
+      setEditedArgs(initial)
+    }
+  }, [needsConfirmation, inputs])
+
+  const handleConfirm = () => {
+    if (!onConfirm) return
+    if (needsConfirmation && parsedArgs) {
+      // Parse edited values back; fall back to original if invalid JSON
+      const result: Record<string, any> = {}
+      for (const [k, v] of Object.entries(editedArgs)) {
+        try {
+          result[k] = JSON.parse(v)
+        } catch (_) {
+          result[k] = v
+        }
+      }
+      onConfirm(result)
+    } else {
+      onConfirm()
     }
   }
 
-  // 普通模式的样式
   return (
     <div className="bg-green-50 dark:bg-green-950/50 border border-green-200 dark:border-green-800 rounded-md shadow-sm overflow-hidden">
       {/* Header */}
@@ -138,11 +162,22 @@ const ToolCallTag: React.FC<ToolCallTagProps> = ({
                       <span className="font-bold text-green-900 dark:text-green-100">
                         {key}:
                       </span>
-                      <div className="text-gray-600 dark:text-gray-400 leading-relaxed break-all">
-                        {typeof value == 'object'
-                          ? JSON.stringify(value, null, 2)
-                          : String(value)}
-                      </div>
+                      {needsConfirmation ? (
+                        <textarea
+                          className="text-gray-800 dark:text-gray-200 bg-green-50 dark:bg-green-950 border border-green-300 dark:border-green-700 rounded p-2 text-sm leading-relaxed resize-y w-full min-h-[60px] focus:outline-none focus:ring-1 focus:ring-green-500"
+                          value={editedArgs[key] ?? (typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value))}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) =>
+                            setEditedArgs((prev) => ({ ...prev, [key]: e.target.value }))
+                          }
+                        />
+                      ) : (
+                        <div className="text-gray-600 dark:text-gray-400 leading-relaxed break-all">
+                          {typeof value == 'object'
+                            ? JSON.stringify(value, null, 2)
+                            : String(value)}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -161,14 +196,14 @@ const ToolCallTag: React.FC<ToolCallTagProps> = ({
               <div className="mt-4 pt-4 border-t border-green-200 dark:border-green-800">
                 <div className="flex gap-2">
                   <Button
-                    onClick={onConfirm}
+                    onClick={(e) => { e.stopPropagation(); handleConfirm() }}
                     className="flex-1 bg-green-600 hover:bg-green-700 text-white"
                   >
                     <Check className="h-4 w-4 mr-2" />
                     {t('chat.toolCall.confirm', 'Confirm')}
                   </Button>
                   <Button
-                    onClick={onCancel}
+                    onClick={(e) => { e.stopPropagation(); onCancel?.() }}
                     variant="outline"
                     className="flex-1 border-green-300 text-green-700 hover:bg-green-100"
                   >

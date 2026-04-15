@@ -949,9 +949,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                             }
                           }}
                           requiresConfirmation={!!pendingBatch || needsLegacyConfirmation}
-                          onConfirm={() => {
+                          onConfirm={(editedArgs) => {
                             if (pendingBatch) {
-                              // Batch approval: approve the whole batch
+                              // Batch approval: send the whole batch, patching args for THIS tool call
+                              const patchedToolCalls = pendingBatch.tool_calls.map((btc) =>
+                                btc.id === toolCall.id && editedArgs
+                                  ? { ...btc, arguments: editedArgs }
+                                  : btc
+                              )
                               fetch('/api/batch_tool_approval', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
@@ -959,7 +964,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                                   session_id: sessionId,
                                   batch_id: pendingBatch.batch_id,
                                   approved: true,
-                                  tool_calls: pendingBatch.tool_calls,
+                                  tool_calls: patchedToolCalls,
                                 }),
                               })
                             } else {

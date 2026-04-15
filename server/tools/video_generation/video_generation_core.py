@@ -97,6 +97,7 @@ async def generate_video_with_provider(
     model: str,
     tool_call_id: str,
     config: Any,
+    tool_id: Optional[str] = None,
     input_images: Optional[list[str]] = None,
     input_videos: Optional[list[str]] = None,
     input_audios: Optional[list[str]] = None,
@@ -139,10 +140,13 @@ async def generate_video_with_provider(
             List[ModelInfo], ctx.get('model_info', {}).get(model_name, []))
 
         if model_info_list == []:
-            # video registered as tool — ToolInfoJson uses 'id' as the model name key
+            # video registered as tool — ToolInfoJson uses 'id' as the tool function name key
+            # tool_id is the LangChain tool name (e.g. "generate_video_by_cfgpu_seedance_2_0")
+            # model_name is the API model name (e.g. "wan-video") — these differ, so use tool_id first
             all_tools: List[ModelInfo] = cast(
                 List[ModelInfo], ctx.get('tool_list', []))
-            model_info_list = [t for t in all_tools if t.get('id') == model_name or t.get('name') == model_name]
+            lookup_names = {n for n in [tool_id, model_name] if n}
+            model_info_list = [t for t in all_tools if t.get('id') in lookup_names or t.get('name') in lookup_names]
 
         # Use get_default_provider which already handles Jaaz prioritization
         provider_name = get_default_provider(model_info_list)

@@ -75,6 +75,7 @@ async def generate_video_by_cfgpu_seedance_2_0_fast(
         model="wan-video-fast",
         tool_call_id=tool_call_id,
         config=config,
+        tool_id="generate_video_by_cfgpu_seedance_2_0_fast",
         input_images=input_images,
         input_videos=input_videos,
         input_audios=input_audios,
