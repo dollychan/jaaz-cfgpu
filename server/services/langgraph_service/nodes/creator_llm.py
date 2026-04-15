@@ -1,7 +1,7 @@
 # server/services/langgraph_service/nodes/creator_llm.py
 from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.tools import BaseTool
 from services.langgraph_service.state import HarnessState
 
@@ -38,8 +38,9 @@ def _strip_planner_messages(messages: list) -> list:
     1. Reference tools not in the current tool list (write_plan)
     2. End with an AIMessage that has unanswered tool_calls (no ToolMessage follows)
     """
-    # Pass 1: remove write_plan calls and their results
+    # Pass 1: remove write_plan calls and their results; capture plan content
     planner_tc_ids: set = set()
+    plan_content: Optional[str] = None
     filtered = []
     for msg in messages:
         tc_list = getattr(msg, "tool_calls", None) or []
@@ -52,8 +53,23 @@ def _strip_planner_messages(messages: list) -> list:
             continue
         tc_id = getattr(msg, "tool_call_id", None)
         if tc_id and tc_id in planner_tc_ids:
+            # Capture plan content from the ToolMessage result
+            content = getattr(msg, "content", "") or ""
+            if content and "<plan>" in content:
+                plan_content = content
             continue
         filtered.append(msg)
+
+    # Inject plan as a HumanMessage after the first user message
+    if plan_content and filtered:
+        plan_msg = HumanMessage(content=f"Execution plan from planner:\n{plan_content}\n\nPlease execute this plan step by step.")
+        insert_at = 1
+        for i, m in enumerate(filtered):
+            if type(m).__name__ in ("HumanMessage", "human"):
+                insert_at = i + 1
+                break
+        filtered = filtered[:insert_at] + [plan_msg] + filtered[insert_at:]
+        print(f"📋 creator_llm: injected plan content into context")
 
     # Pass 2: remove dangling tool_calls (AIMessage with tool_calls but no following ToolMessage)
     answered_tc_ids: set = {

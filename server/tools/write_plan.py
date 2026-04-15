@@ -34,4 +34,8 @@ def write_plan_tool(
     tool_call_id: Annotated[str, InjectedToolCallId],
 ) -> str:
     print("write_plan_tool")
-    return "<hide_in_user_ui> Plan made. Now you can start executing the plan, or handoff the task to the suitable agent who specializes in the steps of the plan.</hide_from_user>"
+    steps_text = "\n".join(
+        f"{i+1}. {s.title}" + (f": {s.description}" if s.description else "")
+        for i, s in enumerate(steps)
+    )
+    return f"<plan>\n{steps_text}\n</plan>"
