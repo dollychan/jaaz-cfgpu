@@ -27,6 +27,37 @@ def _build_harness_context(state: HarnessState) -> str:
     return "\n".join(lines)
 
 
+_PLANNER_TOOL_NAMES = {"write_plan"}
+
+
+def _strip_planner_messages(messages: list) -> list:
+    """Remove write_plan tool calls and their ToolMessage results.
+
+    Strict OpenAI-compatible providers reject message histories that reference
+    tools not in the current tool list.  The creator LLM only knows about media
+    tools, so write_plan exchanges must be stripped before invoking it.
+    """
+    planner_tc_ids: set = set()
+    filtered = []
+    for msg in messages:
+        # Collect write_plan tool_call ids from AIMessages
+        tc_list = getattr(msg, "tool_calls", None) or []
+        planner_ids = {tc["id"] for tc in tc_list if tc.get("name") in _PLANNER_TOOL_NAMES}
+        if planner_ids:
+            planner_tc_ids.update(planner_ids)
+            remaining = [tc for tc in tc_list if tc.get("name") not in _PLANNER_TOOL_NAMES]
+            if remaining or (getattr(msg, "content", None)):
+                filtered.append(msg.model_copy(update={"tool_calls": remaining}))
+            # Drop entirely if only write_plan calls and no content
+            continue
+        # Drop ToolMessages that are write_plan results
+        tc_id = getattr(msg, "tool_call_id", None)
+        if tc_id and tc_id in planner_tc_ids:
+            continue
+        filtered.append(msg)
+    return filtered
+
+
 def make_creator_llm_node(
     creator_llm: Any,
     creator_tools: List[BaseTool],
@@ -36,7 +67,7 @@ def make_creator_llm_node(
     bound_llm = creator_llm.bind_tools(creator_tools) if creator_tools else creator_llm
 
     async def creator_llm_node(state: HarnessState) -> Dict[str, Any]:
-        messages = list(state.get("messages", []))
+        messages = _strip_planner_messages(list(state.get("messages", [])))
 
         # Build system messages: agent system prompt + harness context
         system_messages = []
