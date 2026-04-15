@@ -152,8 +152,13 @@ def build_harness_graph(
                     }
                     break
 
+        # Include the patched AIMessage so LangGraph's add_messages reducer replaces
+        # the original in state (by message ID). This ensures the next `values` chunk
+        # and `all_messages` WS event reflect the user-edited args.
+        result_messages = ([patched] if patched_messages is not messages else []) + new_messages
         return {
             **result,
+            "messages": result_messages,
             "pending_tool_calls": [],
             "approved_tool_calls": [],
             "error_context": error_ctx,

@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import Any, Dict, List
 from services.websocket_service import send_to_websocket
 from services.batch_approval_manager import batch_approval_manager
+from services.db_service import db_service
 
 router = APIRouter(prefix="/api")
 
@@ -50,6 +51,8 @@ async def handle_batch_tool_approval(request: BatchToolApprovalRequest):
         success = batch_approval_manager.approve_batch(request.batch_id, normalized)
         if not success:
             raise HTTPException(status_code=404, detail="Batch not found or already processed")
+        # Persist edited args to DB so chat history reflects the approved values
+        await db_service.update_last_assistant_tool_call_args(request.session_id, normalized)
         await send_to_websocket(request.session_id, {
             'type': 'tool_batch_approved',
             'batch_id': request.batch_id,

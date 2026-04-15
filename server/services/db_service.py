@@ -82,6 +82,59 @@ class DatabaseService:
             """, (session_id, role, message))
             await db.commit()
 
+    async def update_last_assistant_tool_call_args(
+        self, session_id: str, tool_calls: List[Dict[str, Any]]
+    ) -> bool:
+        """Patch tool_call args in the most recent assistant message for this session.
+
+        tool_calls: list of {"id": ..., "name": ..., "args": {...}}
+        Returns True if a row was updated, False if nothing matched.
+        """
+        args_by_id = {tc["id"]: tc["args"] for tc in tool_calls if tc.get("id")}
+        if not args_by_id:
+            return False
+
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = sqlite3.Row
+            cursor = await db.execute(
+                """
+                SELECT id, message FROM chat_messages
+                WHERE session_id = ? AND role = 'assistant'
+                ORDER BY id DESC LIMIT 1
+                """,
+                (session_id,),
+            )
+            row = await cursor.fetchone()
+            if not row:
+                return False
+
+            try:
+                msg = json.loads(row["message"])
+            except Exception:
+                return False
+
+            # OpenAI format: msg["tool_calls"] = [{"id":..., "function":{"arguments":...}}]
+            changed = False
+            for tc in msg.get("tool_calls") or []:
+                tc_id = tc.get("id")
+                if tc_id in args_by_id:
+                    fn = tc.setdefault("function", {})
+                    new_args = args_by_id[tc_id]
+                    fn["arguments"] = (
+                        json.dumps(new_args) if isinstance(new_args, dict) else str(new_args)
+                    )
+                    changed = True
+
+            if not changed:
+                return False
+
+            await db.execute(
+                "UPDATE chat_messages SET message = ? WHERE id = ?",
+                (json.dumps(msg), row["id"]),
+            )
+            await db.commit()
+            return True
+
     async def get_chat_history(self, session_id: str) -> List[Dict[str, Any]]:
         """Get chat history for a session"""
         async with aiosqlite.connect(self.db_path) as db:
