@@ -112,7 +112,7 @@ def build_harness_graph(
             pending = state.get("pending_tool_calls", [])
             rejection_msgs = [
                 ToolMessage(
-                    content="Tool call rejected by user.",
+                    content="Tool call rejected by user. STOP. No more tools will be executed.",
                     tool_call_id=tc["id"],
                     name=tc["name"],
                 )
@@ -203,6 +203,8 @@ def build_harness_graph(
     if planner_llm is not None:
         graph.add_conditional_edges("planner_llm", _route_planner)
         graph.add_edge("planner_tools", "planner_llm")   # loop until planner done
+        # TODO: replace with conditional edge once validate_plan supports plan scoring.
+        # Future: score >= threshold → creator_llm, score < threshold → planner_llm (with retry_count guard)
         graph.add_edge("validate_plan", "creator_llm")
 
     graph.add_conditional_edges("creator_llm", _route_creator)
