@@ -1005,7 +1005,7 @@ const ChatTextarea: React.FC<ChatTextareaProps> = ({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-24">
-              {['480p', '720p'].map((res) => (
+              {['480p', '720p', '1080p'].map((res) => (
                 <DropdownMenuItem
                   key={res}
                   onClick={() => {

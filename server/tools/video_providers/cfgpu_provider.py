@@ -40,7 +40,7 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
     _RESOLUTION_MAP: Dict[str, str] = {
         "480p": "480p",
         "720p": "720p",
-        "1080p": "720p",  # 1080p → 1920×1080 ≈ 2.07M pixels > r2v limit; cap to 720p
+        "1080p": "1080p",  # 1080p → 1920×1080 ≈ 2.07M pixels > r2v limit; cap to 720p
     }
 
     def _build_request_payload(
@@ -130,11 +130,11 @@ class CfgpuVideoProvider(VideoProviderBase, provider_name="cfgpu"):
         # the API caps the output instead of deriving it from a potentially larger image.
         has_r2v = bool(input_image_data)
         effective_resolution = self._RESOLUTION_MAP.get(resolution, resolution)
-        if has_r2v and resolution == "1080p":
-            print(
-                f"⚠️ CFGPU r2v mode: capping resolution 1080p → 720p "
-                f"(API limit: ≤{self._R2V_MAX_PIXELS} pixels)"
-            )
+       # if has_r2v and resolution == "1080p":
+        #    print(
+         #       f"⚠️ CFGPU r2v mode: capping resolution 1080p → 720p "
+         #       f"(API limit: ≤{self._R2V_MAX_PIXELS} pixels)"
+          #  )
 
         print(f"🎵 CFGPU payload: model={model}, resolution={effective_resolution}, generate_audio={generate_audio}, r2v={has_r2v}, videos={len(input_video_data or [])}, audios={len(input_audio_data or [])}")
 
